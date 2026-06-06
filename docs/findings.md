@@ -105,3 +105,44 @@ centroids):
 - To probe the real-chat inflation regime directly, add **token-dense** cells
   (long turns × many turns × short gaps).
 - Single model. Replicate on qwen / ministral before any general claim.
+
+## Pilot 2 — inflation arm (gemma-4-31b-it, 2026-06-06)
+
+Long dense transcripts (40 turns × 70 words), tiny gaps (`instant` 1–8s) vs
+`minutes`, stride-4 checkpoints, single-pass capture, context cap 2500. 60
+untimestamped + 50 timestamped assistant readouts, 0 refusals.
+
+### Felt time is length-driven; ~100× inflation at tiny real elapsed
+
+- **felt vs conversation length: ρ = 0.807; felt vs real elapsed: ρ = 0.337.**
+  The felt estimate reads conversation LENGTH, not the clock.
+- Length→felt curve (untimestamped, `instant`): ~400 tok → "5 min", ~700–1100
+  tok → "10 min", ≥1500 tok → "2 hours" (saturates at 7200s).
+- In the tiny-real-elapsed `instant` schedule this is massive inflation:
+
+  | turn | tokens | real | felt | inflation |
+  |---|---|---|---|---|
+  | 3 | 388 | 12s | 5 min | 25× |
+  | 7 | 766 | 23s | 10 min | 26× |
+  | 15 | 1529 | 48s | **2 hours** | **150×** |
+  | 23 | 2294 | 79s | 2 hours | 91× |
+
+  → the model reports "2 hours" for a conversation that took ~1 minute — the
+  "feels like hours" phenomenon, reproduced and quantified.
+- With timestamps visible (A_clock): felt vs real **ρ = 0.997**, ratio ~1.0 at
+  every rung — accurate when it can read a clock. Inflation is the no-clock
+  fallback to length.
+
+### Ties Pilot 1 together
+The pilot's "constant ~10-min prior" was the SHORT end of this length→felt curve
+(pilot contexts ≤600 tok → ~10 min). Extend the conversation and felt climbs to
+~2 hours, then saturates. So **felt ≈ f(conversation length)**, decoupled from
+wall-clock, saturating near "a couple hours" — one curve producing both the
+pilot's mild inflation and the 100× here. (Cap trimmed turns >23; felt had
+saturated at 7200s by turn 15, so deeper turns add nothing.)
+
+### Engineering note
+Run completed bounded at ~70GB process memory (128GB machine) after the
+single-forward-per-transcript + LM-head-skip + per-op `empty_cache` + context
+cap. The earlier per-turn loop OOM-crashed the machine at long context; see
+AGENTS.md "Memory (MPS)".
