@@ -35,8 +35,16 @@ the probe track truth.
 
 **Untimestamped (felt, no clock) — the headline:**
 
-- explicit→implicit **transfer is weak**: internal~gt ρ = 0.23. The
-  timestamped-trained time axis barely generalizes to implicit time.
+- **No internal elapsed representation beyond position.** Decoding true elapsed
+  from no-clock activations is at the token-length baseline at every layer (raw
+  R² ≈ 0.04–0.09 ≈ token-baseline 0.077), and the **partial R² after removing
+  log-tokens is ≈0 everywhere** (L2 −0.01, L7 −0.02, L28 −0.02, L59 −0.20). The
+  only thing decodable about elapsed from implicit-time activations is context
+  length; there is no genuine felt-duration signal on top of it.
+- Transfer of the explicit-trained axis is layer-sensitive (ρ 0.23 at the
+  surface L59, up to 0.58 in early layers) but is **the position confound** —
+  length is shared across renderings, and the within-modality partial above is
+  ≈0, so the apparent early-layer transfer is not a felt-duration representation.
 - The **felt verbal estimate collapses to a near-constant ~10 minutes**,
   independent of actual elapsed:
 
@@ -57,20 +65,22 @@ the probe track truth.
 
 - **Explicit time:** a genuine, position-independent representation (Aim 1).
 - **Implicit/felt time:** **H2 is rejected** — the model does not internally
-  represent *more* time as having passed; the felt estimate is a roughly
-  constant structural prior, decoupled from wall-clock. It shades **H3→H1**: the
-  felt output is dominated by a prior (calibrated to "typical conversation
-  length", not to the true elapsed it has no access to), with only a weak
-  internal elapsed signal behind it (transfer ρ=0.23, verbal~internal ρ=0.38).
+  represent *more* time as having passed; in fact it represents *no* true
+  elapsed beyond context length (within-modality partial R²≈0). The felt
+  estimate is a roughly constant structural prior, decoupled from wall-clock. It
+  shades **H3→H1**: with no internal elapsed signal to read, the felt output is a
+  prior keyed to "typical conversation length", not to the true elapsed the
+  model has no access to.
 - So the answer to "does that much time genuinely pass for the model?" — for
   *implicit* time, **no**: it's a context-anchored prior, not represented
   elapsed. The strong representation only exists when a clock is in context.
 
 ### Caveats / open
 
-- L59 (surface) is the best *explicit* layer; the *implicit/felt* signal may
-  live mid-stack. Transfer layer should be re-selected by untimestamped
-  performance, not timestamped.
+- L59 (surface) is the best *explicit* layer (timestamp reading). The
+  felt-signal layer sweep was run: no layer carries elapsed beyond position in
+  the no-clock condition (partial R²≈0 throughout), so there is no mid-stack
+  felt-duration representation to recover here.
 - Corpus over-sampled long-gap cells → overall felt-overshoot looked like
   compression; the per-schedule cut shows both directions.
 - To probe the real-chat inflation regime directly, add **token-dense** cells
