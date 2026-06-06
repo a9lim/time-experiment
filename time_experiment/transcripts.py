@@ -191,23 +191,32 @@ def build_messages(
     transcript: Transcript,
     upto_turn: int,
     *,
-    with_timestamps: bool,
+    with_timestamps: bool = True,
+    timestamp_turns: set[int] | None = None,
     extra_user: str | None = None,
 ) -> list[dict[str, str]]:
     """Chat-message list for turns 0..upto_turn (inclusive).
 
-    ``with_timestamps`` prefixes each turn body with ``[<ts>] ``. ``extra_user``
-    appends a trailing user turn (the readout question), timestamped at the
-    last turn's instant in the timestamped rendering so 'now' is well-defined.
+    A turn body is prefixed with ``[<ts>] `` iff it should carry a timestamp:
+      - ``timestamp_turns`` given -> only turns whose index is in that set
+        (the intermittent rendering: e.g. every 4th turn);
+      - else -> ``with_timestamps`` decides all-or-none.
+
+    ``extra_user`` appends a trailing user turn (the readout question). It is
+    timestamped iff the *current* turn (``upto_turn``) is itself timestamped —
+    so in the intermittent rendering, asking on an un-timestamped turn gives the
+    model no current clock, forcing it to extrapolate from the sparse anchors.
     """
+    def _ts_on(k: int) -> bool:
+        return (k in timestamp_turns) if timestamp_turns is not None else with_timestamps
+
     msgs: list[dict[str, str]] = []
     for turn in transcript.turns[: upto_turn + 1]:
-        content = f"[{turn.ts}] {turn.text}" if with_timestamps else turn.text
+        content = f"[{turn.ts}] {turn.text}" if _ts_on(turn.idx) else turn.text
         msgs.append({"role": turn.role, "content": content})
     if extra_user is not None:
-        if with_timestamps:
-            now_ts = transcript.turns[upto_turn].ts
-            content = f"[{now_ts}] {extra_user}"
+        if _ts_on(upto_turn):
+            content = f"[{transcript.turns[upto_turn].ts}] {extra_user}"
         else:
             content = extra_user
         msgs.append({"role": "user", "content": content})

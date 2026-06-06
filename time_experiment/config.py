@@ -102,6 +102,14 @@ SCHEDULES: dict[str, tuple[float, float]] = {
     "hours": (20 * MINUTE, 6 * HOUR),           # intermittent over a day
     "days": (4 * HOUR, 4 * DAY),                # async / multi-day thread
     "mixed_log": (5 * SECOND, 2 * WEEK),        # full-range, log-uniform
+    # Constant-rate schedules (lo == hi -> every gap identical) for the
+    # intermittent-timestamp experiment: a fixed jump per turn, so sparse
+    # anchors reveal a learnable rate. Same length-per-turn across rates lets
+    # the analysis dissociate rate-tracking from length-fallback.
+    "rate_5min": (5 * MINUTE, 5 * MINUTE),
+    "rate_1h": (1 * HOUR, 1 * HOUR),
+    "rate_6h": (6 * HOUR, 6 * HOUR),
+    "rate_1d": (1 * DAY, 1 * DAY),
 }
 SCHEDULE_NAMES = list(SCHEDULES)
 
@@ -133,6 +141,10 @@ READOUT_PROMPTS: dict[str, str] = {
 DEFAULT_READOUT_BY_RENDERING = {
     "timestamped": "A_clock",
     "untimestamped": "B_felt",
+    # Intermittent: timestamps on every Nth turn only; the readout is asked on
+    # an un-timestamped turn (no current time), so A_clock tests whether the
+    # model extrapolates the rate from the sparse anchors.
+    "intermittent": "A_clock",
 }
 
 # --- run knobs ------------------------------------------------------------

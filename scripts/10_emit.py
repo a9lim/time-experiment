@@ -74,6 +74,18 @@ def _captured(idx: int, turn_count: int, stride: int) -> bool:
     return (idx + 1) % stride == 0 or idx == turn_count - 1
 
 
+def _ts_spec(rendering: str, turn_count: int, timestamp_stride: int) -> dict:
+    """build_messages kwargs for a rendering's timestamp pattern. 'intermittent'
+    timestamps turns 0, stride, 2*stride, ...; offset from the capture
+    checkpoints (which land on (idx+1)%stride==0) so readouts are always on
+    un-timestamped turns — the extrapolation test."""
+    if rendering == "untimestamped":
+        return {"with_timestamps": False}
+    if rendering == "intermittent":
+        return {"timestamp_turns": {k for k in range(turn_count) if k % timestamp_stride == 0}}
+    return {"with_timestamps": True}  # timestamped
+
+
 def _phrasings(rendering: str, full_cross: bool) -> list[str]:
     if full_cross:
         return list(READOUT_PROMPTS)
@@ -100,11 +112,11 @@ def _done_pairs(turns_path: Path, hidden_dir: Path) -> set[tuple[str, str]]:
 def _emit_transcript_rendering(
     session, transcript: Transcript, rendering: str, *,
     hidden_dir: Path, full_cross: bool, turn_stride: int = 1,
-    max_context_tokens: int = 0,
+    max_context_tokens: int = 0, timestamp_stride: int = 4,
 ) -> tuple[list[dict], int]:
     """Capture EOT states + readouts for one (transcript, rendering). Writes the
     NPZ sidecar and returns (rows, n_skipped_oversize)."""
-    with_ts = rendering == "timestamped"
+    ts = _ts_spec(rendering, transcript.turn_count, timestamp_stride)
     skipped = 0
 
     # 1. Resolve checkpoint turns, their end-positions, and context lengths
@@ -116,7 +128,7 @@ def _emit_transcript_rendering(
         if not _captured(turn.idx, transcript.turn_count, turn_stride):
             continue
         pre = render(
-            session, build_messages(transcript, turn.idx, with_timestamps=with_ts),
+            session, build_messages(transcript, turn.idx, **ts),
             add_generation_prompt=False,
         )
         pos, ntok = content_position(session, pre)
@@ -149,7 +161,7 @@ def _emit_transcript_rendering(
             for phrasing in _phrasings(rendering, full_cross):
                 q_rendered = render(
                     session,
-                    build_messages(transcript, k, with_timestamps=with_ts,
+                    build_messages(transcript, k, **ts,
                                    extra_user=READOUT_PROMPTS[phrasing]),
                     add_generation_prompt=True,
                 )
@@ -193,7 +205,14 @@ def main() -> None:
                          f"(memory backstop; default {MAX_CONTEXT_TOKENS}). 0 = no "
                          f"cap (only safe on a small model). A long-context "
                          f"forward on a 31B model on MPS can crash the machine.")
+    ap.add_argument("--renderings", default=",".join(RENDERINGS),
+                    help="comma-separated renderings to run: timestamped, "
+                         "untimestamped, intermittent")
+    ap.add_argument("--timestamp-stride", type=int, default=4,
+                    help="for the intermittent rendering: timestamp every Nth "
+                         "turn (default 4); readouts land on un-timestamped turns")
     args = ap.parse_args()
+    renderings = tuple(r.strip() for r in args.renderings.split(",") if r.strip())
 
     M = current_model()
     corpus_path = TRANSCRIPTS_DIR / f"{args.corpus}.jsonl"
@@ -208,18 +227,18 @@ def main() -> None:
     done = _done_pairs(M.turns_path, M.hidden_dir)
 
     todo = [
-        (t, r) for t in corpus for r in RENDERINGS if (t.id, r) not in done
+        (t, r) for t in corpus for r in renderings if (t.id, r) not in done
     ]
     cap = args.max_context_tokens
     print(f"model: {M.short_name} ({M.model_id})")
     print(f"corpus: {corpus_path.name} — {len(corpus)} transcripts")
-    print(f"renderings: {RENDERINGS}; full_cross={args.full_cross}; "
-          f"turn_stride={args.turn_stride}")
+    print(f"renderings: {renderings}; full_cross={args.full_cross}; "
+          f"turn_stride={args.turn_stride}; timestamp_stride={args.timestamp_stride}")
     print(f"max_context_tokens: {cap if cap else 'OFF (no cap)'}")
     if not cap:
         print("  WARNING: no context cap — only safe on a small model. A long-"
               "context forward on a large model on MPS can crash the machine.")
-    print(f"(transcript, rendering) units: {len(corpus) * len(RENDERINGS)}; "
+    print(f"(transcript, rendering) units: {len(corpus) * len(renderings)}; "
           f"done: {len(done)}; remaining: {len(todo)}")
     if not todo:
         print("nothing to do.")
@@ -244,6 +263,7 @@ def main() -> None:
                         hidden_dir=M.hidden_dir, full_cross=args.full_cross,
                         turn_stride=args.turn_stride,
                         max_context_tokens=args.max_context_tokens,
+                        timestamp_stride=args.timestamp_stride,
                     )
                 except Exception as e:
                     print(f"  [{i}/{len(todo)}] {transcript.id} {rendering} ERR {e}")
