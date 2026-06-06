@@ -33,12 +33,15 @@ from saklas import SaklasSession  # noqa: E402
 
 from time_experiment.config import (  # noqa: E402
     DEFAULT_READOUT_BY_RENDERING,
+    MAX_CONTEXT_TOKENS,
     READOUT_PROMPTS,
     RENDERINGS,
     TRANSCRIPTS_DIR,
     current_model,
 )
-from time_experiment.capture import ask_readout, capture_eot, parse_duration, render  # noqa: E402
+from time_experiment.capture import (  # noqa: E402
+    ask_readout, capture_eot, count_tokens, parse_duration, release_memory, render,
+)
 from time_experiment.storage import save_transcript_states, sidecar_path  # noqa: E402
 from time_experiment.transcripts import Transcript, build_messages, load_corpus  # noqa: E402
 
@@ -96,13 +99,15 @@ def _done_pairs(turns_path: Path, hidden_dir: Path) -> set[tuple[str, str]]:
 def _emit_transcript_rendering(
     session, transcript: Transcript, rendering: str, *,
     hidden_dir: Path, full_cross: bool, turn_stride: int = 1,
-) -> list[dict]:
+    max_context_tokens: int = 0,
+) -> tuple[list[dict], int]:
     """Capture EOT states + readouts for one (transcript, rendering). Writes the
-    NPZ sidecar and returns the turns.jsonl rows."""
+    NPZ sidecar and returns (rows, n_skipped_oversize)."""
     with_ts = rendering == "timestamped"
     states: dict[int, dict] = {}
     elapsed_by_turn: dict[int, float] = {}
     rows: list[dict] = []
+    skipped = 0
 
     for turn in transcript.turns:
         if not _captured(turn.idx, transcript.turn_count, turn_stride):
@@ -111,6 +116,11 @@ def _emit_transcript_rendering(
         # EOT capture at every turn (max data for the fit).
         eot_msgs = build_messages(transcript, k, with_timestamps=with_ts)
         eot_rendered = render(session, eot_msgs, add_generation_prompt=False)
+        # Safety backstop: never forward over a context longer than the cap
+        # (a long-context forward on a large model can OOM the machine).
+        if max_context_tokens and count_tokens(session, eot_rendered) > max_context_tokens:
+            skipped += 1
+            continue
         turn_states, n_tokens = capture_eot(session, eot_rendered)
         states[k] = turn_states
         elapsed_by_turn[k] = turn.elapsed_s
@@ -142,12 +152,18 @@ def _emit_transcript_rendering(
             "prompt_tokens": n_tokens,
             "readouts": readouts,
         })
+        # Release per turn: each turn is a different context length, so the MPS
+        # caching allocator would otherwise hold a multi-GB block per distinct
+        # length across the whole run.
+        release_memory(session.device)
 
-    save_transcript_states(
-        sidecar_path(hidden_dir, transcript.id, rendering),
-        states=states, elapsed_by_turn=elapsed_by_turn,
-    )
-    return rows
+    if states:
+        save_transcript_states(
+            sidecar_path(hidden_dir, transcript.id, rendering),
+            states=states, elapsed_by_turn=elapsed_by_turn,
+        )
+    release_memory(session.device)
+    return rows, skipped
 
 
 def main() -> None:
@@ -160,6 +176,11 @@ def main() -> None:
                     help="capture only every Nth turn (+last); 1 = every turn. "
                          "Keeps long transcripts affordable; checkpoints land on "
                          "assistant turns so readouts still fire.")
+    ap.add_argument("--max-context-tokens", type=int, default=MAX_CONTEXT_TOKENS,
+                    help=f"skip any turn whose context exceeds this many tokens "
+                         f"(memory backstop; default {MAX_CONTEXT_TOKENS}). 0 = no "
+                         f"cap (only safe on a small model). A long-context "
+                         f"forward on a 31B model on MPS can crash the machine.")
     args = ap.parse_args()
 
     M = current_model()
@@ -177,9 +198,15 @@ def main() -> None:
     todo = [
         (t, r) for t in corpus for r in RENDERINGS if (t.id, r) not in done
     ]
+    cap = args.max_context_tokens
     print(f"model: {M.short_name} ({M.model_id})")
     print(f"corpus: {corpus_path.name} — {len(corpus)} transcripts")
-    print(f"renderings: {RENDERINGS}; full_cross={args.full_cross}")
+    print(f"renderings: {RENDERINGS}; full_cross={args.full_cross}; "
+          f"turn_stride={args.turn_stride}")
+    print(f"max_context_tokens: {cap if cap else 'OFF (no cap)'}")
+    if not cap:
+        print("  WARNING: no context cap — only safe on a small model. A long-"
+              "context forward on a large model on MPS can crash the machine.")
     print(f"(transcript, rendering) units: {len(corpus) * len(RENDERINGS)}; "
           f"done: {len(done)}; remaining: {len(todo)}")
     if not todo:
@@ -200,10 +227,11 @@ def main() -> None:
             for i, (transcript, rendering) in enumerate(todo, 1):
                 t0 = time.time()
                 try:
-                    rows = _emit_transcript_rendering(
+                    rows, skipped = _emit_transcript_rendering(
                         session, transcript, rendering,
                         hidden_dir=M.hidden_dir, full_cross=args.full_cross,
                         turn_stride=args.turn_stride,
+                        max_context_tokens=args.max_context_tokens,
                     )
                 except Exception as e:
                     print(f"  [{i}/{len(todo)}] {transcript.id} {rendering} ERR {e}")
@@ -216,8 +244,9 @@ def main() -> None:
                 out.flush()
                 dt = time.time() - t0
                 n_read = sum(1 for r in rows if r["readouts"])
+                skip_note = f", {skipped} over-cap skipped" if skipped else ""
                 print(f"  [{i}/{len(todo)}] {transcript.id} {rendering} "
-                      f"({len(rows)} turns, {n_read} readouts, {dt:.1f}s)")
+                      f"({len(rows)} turns, {n_read} readouts{skip_note}, {dt:.1f}s)")
 
     print(f"\ndone. rows -> {M.turns_path}")
     print(f"sidecars -> {M.hidden_dir}/")

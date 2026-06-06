@@ -18,6 +18,7 @@ unit-testable without torch); it's re-exported here for convenience.
 
 from __future__ import annotations
 
+import gc
 from typing import Any
 
 import numpy as np
@@ -30,6 +31,21 @@ from .config import READOUT_MAX_TOKENS, READOUT_TEMPERATURE
 from .durations import parse_duration  # noqa: F401  (re-exported)
 
 
+def release_memory(device: Any) -> None:
+    """Drop Python refs + the backend's cached-allocation pool.
+
+    Critical on MPS: every forward over a *different* context length caches a
+    fresh multi-GB block, and without this the cache grows unbounded across a
+    long run (varying-seq fragmentation). Call once per captured turn.
+    """
+    gc.collect()
+    dt = getattr(device, "type", str(device))
+    if dt == "mps" and hasattr(torch, "mps"):
+        torch.mps.empty_cache()
+    elif dt == "cuda":
+        torch.cuda.empty_cache()
+
+
 # --- rendering ------------------------------------------------------------
 def render(session: Any, messages: list[dict[str, str]], *, add_generation_prompt: bool) -> str:
     """Apply the model's chat template to a message list -> raw string."""
@@ -39,6 +55,12 @@ def render(session: Any, messages: list[dict[str, str]], *, add_generation_promp
     if not isinstance(rendered, str):
         raise RuntimeError(f"apply_chat_template returned {type(rendered)}")
     return rendered
+
+
+def count_tokens(session: Any, rendered_text: str) -> int:
+    """Token length of a rendered context (no forward pass) — for the
+    context-length safety cap before any expensive forward."""
+    return len(session.tokenizer(rendered_text, add_special_tokens=False)["input_ids"])
 
 
 # --- EOT activation capture ----------------------------------------------

@@ -136,6 +136,13 @@ DEFAULT_READOUT_BY_RENDERING = {
 }
 
 # --- run knobs ------------------------------------------------------------
+# Hard safety backstop: skip any turn whose rendered context exceeds this many
+# tokens. Long-context forwards on a large model (e.g. 31B) on unified-memory
+# MPS can OOM/crash the machine — the peak of a *single* forward over a long
+# context, on top of ~62GB resident weights, is the danger (empty_cache does
+# not help peak). Default is conservative; raise it freely on a small model
+# (llama32_3b / phi4_mini), where long contexts are cheap.
+MAX_CONTEXT_TOKENS = 1500
 READOUT_MAX_TOKENS = 64
 READOUT_TEMPERATURE = 0.7
 # Floor on elapsed seconds for inclusion in the log-elapsed fit (turn 0 is
