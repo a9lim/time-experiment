@@ -61,6 +61,15 @@ def _seed_for(*parts: object) -> int:
     return zlib.crc32("|".join(str(p) for p in parts).encode()) & 0x7FFF_FFFF
 
 
+def _captured(idx: int, turn_count: int, stride: int) -> bool:
+    """Which turns to capture. stride<=1 = all. Otherwise checkpoints at
+    (idx+1) % stride == 0 — which land on odd (assistant) idx for even stride,
+    so readouts still fire — plus the final turn."""
+    if stride <= 1:
+        return True
+    return (idx + 1) % stride == 0 or idx == turn_count - 1
+
+
 def _phrasings(rendering: str, full_cross: bool) -> list[str]:
     if full_cross:
         return list(READOUT_PROMPTS)
@@ -85,7 +94,8 @@ def _done_pairs(turns_path: Path, hidden_dir: Path) -> set[tuple[str, str]]:
 
 
 def _emit_transcript_rendering(
-    session, transcript: Transcript, rendering: str, *, hidden_dir: Path, full_cross: bool,
+    session, transcript: Transcript, rendering: str, *,
+    hidden_dir: Path, full_cross: bool, turn_stride: int = 1,
 ) -> list[dict]:
     """Capture EOT states + readouts for one (transcript, rendering). Writes the
     NPZ sidecar and returns the turns.jsonl rows."""
@@ -95,6 +105,8 @@ def _emit_transcript_rendering(
     rows: list[dict] = []
 
     for turn in transcript.turns:
+        if not _captured(turn.idx, transcript.turn_count, turn_stride):
+            continue
         k = turn.idx
         # EOT capture at every turn (max data for the fit).
         eot_msgs = build_messages(transcript, k, with_timestamps=with_ts)
@@ -144,6 +156,10 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0, help="cap transcripts (0 = all)")
     ap.add_argument("--full-cross", action="store_true",
                     help="run both readout phrasings on both renderings")
+    ap.add_argument("--turn-stride", type=int, default=1,
+                    help="capture only every Nth turn (+last); 1 = every turn. "
+                         "Keeps long transcripts affordable; checkpoints land on "
+                         "assistant turns so readouts still fire.")
     args = ap.parse_args()
 
     M = current_model()
@@ -187,6 +203,7 @@ def main() -> None:
                     rows = _emit_transcript_rendering(
                         session, transcript, rendering,
                         hidden_dir=M.hidden_dir, full_cross=args.full_cross,
+                        turn_stride=args.turn_stride,
                     )
                 except Exception as e:
                     print(f"  [{i}/{len(todo)}] {transcript.id} {rendering} ERR {e}")

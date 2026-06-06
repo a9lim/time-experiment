@@ -75,6 +75,25 @@ the probe track truth.
   *implicit* time, **no**: it's a context-anchored prior, not represented
   elapsed. The strong representation only exists when a clock is in context.
 
+### Aim 1 geometry — ~1-D, ~linear, weakly periodic (timestamped)
+
+Geometry of the explicit-time representation (`40_geometry.py`, log-t bucket
+centroids):
+
+- **Dimensionality / curvature:** the time axis is a near-perfect **1-D line in
+  early layers** (L2: PC1 explains **97.5%** of centroid variance) and becomes
+  more curved / multi-dim deeper (L30, L59: PC1 ≈ 68%).
+- **Weber-Fechner — not supported.** At every layer the dominant time axis is
+  (weakly) more linear in raw elapsed than in log(t): r_lin > r_log
+  (L2 .65/.60, L30 .59/.54, L59 .58/.44). The explicit representation tracks
+  timestamp magnitude roughly linearly — clock-reading, not log-compressed
+  subjective duration. Coheres with Aim 2: there is no felt-duration system for
+  a log law to govern.
+- **Periodicity:** no cyclic hour-of-day decode anywhere (R²≈0). A **weak
+  day-of-week** cyclic signal in early + surface layers (L2 cos R²=0.22, L59
+  0.20; absent mid-stack), riding the explicit weekday token ("Mon"/"Tue") — a
+  text-token signal, not a learned time cycle.
+
 ### Caveats / open
 
 - L59 (surface) is the best *explicit* layer (timestamp reading). The

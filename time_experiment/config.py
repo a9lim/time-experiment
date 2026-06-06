@@ -67,8 +67,17 @@ def resolve_model(short: str) -> ModelSpec:
 
 
 def current_model() -> ModelSpec:
-    """Active model from ``$TIME_MODEL`` (default 'gemma')."""
-    return resolve_model(os.environ.get("TIME_MODEL", "gemma"))
+    """Active model from ``$TIME_MODEL`` (default 'gemma').
+
+    ``$TIME_VARIANT`` suffixes the path slug (not the model id), so a second
+    corpus lands in its own ``data/<model>_<variant>/`` without mixing into the
+    main run — e.g. ``TIME_VARIANT=inflation`` -> ``data/gemma_inflation/``.
+    """
+    base = resolve_model(os.environ.get("TIME_MODEL", "gemma"))
+    variant = os.environ.get("TIME_VARIANT")
+    if variant:
+        return ModelSpec(short_name=f"{base.short_name}_{variant}", model_id=base.model_id)
+    return base
 
 
 # --- time grounding -------------------------------------------------------
@@ -87,6 +96,7 @@ WEEK = 7 * DAY
 # in [lo, hi] seconds. Crossing schedules with turn/token counts is the
 # token-length x narrated-time factorial that breaks the position confound.
 SCHEDULES: dict[str, tuple[float, float]] = {
+    "instant": (1 * SECOND, 8 * SECOND),        # near-instant; inflation regime
     "seconds": (2 * SECOND, 30 * SECOND),       # rapid back-and-forth
     "minutes": (1 * MINUTE, 20 * MINUTE),       # normal chat cadence
     "hours": (20 * MINUTE, 6 * HOUR),           # intermittent over a day
