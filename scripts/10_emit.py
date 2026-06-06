@@ -40,7 +40,8 @@ from time_experiment.config import (  # noqa: E402
     current_model,
 )
 from time_experiment.capture import (  # noqa: E402
-    ask_readout, capture_eot, count_tokens, parse_duration, release_memory, render,
+    ask_readout, capture_multi_position, content_position, parse_duration,
+    release_memory, render,
 )
 from time_experiment.storage import save_transcript_states, sidecar_path  # noqa: E402
 from time_experiment.transcripts import Transcript, build_messages, load_corpus  # noqa: E402
@@ -104,42 +105,58 @@ def _emit_transcript_rendering(
     """Capture EOT states + readouts for one (transcript, rendering). Writes the
     NPZ sidecar and returns (rows, n_skipped_oversize)."""
     with_ts = rendering == "timestamped"
-    states: dict[int, dict] = {}
-    elapsed_by_turn: dict[int, float] = {}
-    rows: list[dict] = []
     skipped = 0
 
+    # 1. Resolve checkpoint turns, their end-positions, and context lengths
+    #    (cheap — tokenization only, no forward). Apply the context cap here so
+    #    the single forward below never exceeds it.
+    kept: list[tuple[int, int, int]] = []  # (turn_idx, pool_pos, n_tokens)
+    deepest_rendered: str | None = None
     for turn in transcript.turns:
         if not _captured(turn.idx, transcript.turn_count, turn_stride):
             continue
-        k = turn.idx
-        # EOT capture at every turn (max data for the fit).
-        eot_msgs = build_messages(transcript, k, with_timestamps=with_ts)
-        eot_rendered = render(session, eot_msgs, add_generation_prompt=False)
-        # Safety backstop: never forward over a context longer than the cap
-        # (a long-context forward on a large model can OOM the machine).
-        if max_context_tokens and count_tokens(session, eot_rendered) > max_context_tokens:
+        pre = render(
+            session, build_messages(transcript, turn.idx, with_timestamps=with_ts),
+            add_generation_prompt=False,
+        )
+        pos, ntok = content_position(session, pre)
+        if max_context_tokens and ntok > max_context_tokens:
             skipped += 1
             continue
-        turn_states, n_tokens = capture_eot(session, eot_rendered)
-        states[k] = turn_states
-        elapsed_by_turn[k] = turn.elapsed_s
+        kept.append((turn.idx, pos, ntok))
+        deepest_rendered = pre  # checkpoints ascend -> last kept is deepest
 
-        # Readout only at assistant turns (the appended question is a user turn).
+    if not kept or deepest_rendered is None:
+        return [], skipped
+
+    # 2. ONE forward over the deepest kept context, pooling every checkpoint's
+    #    end-position (LM head skipped). 13MB retained vs N separate forwards.
+    positions = [pos for (_, pos, _) in kept]
+    caps = capture_multi_position(session, deepest_rendered, positions)  # {layer: (P,D)}
+    states = {
+        k: {L: caps[L][i] for L in caps} for i, (k, _, _) in enumerate(kept)
+    }
+    elapsed_by_turn = {k: transcript.turns[k].elapsed_s for (k, _, _) in kept}
+    release_memory(session.device)
+
+    # 3. Verbal readouts at assistant checkpoints (separate short gens; each
+    #    bounded by the cap, released after).
+    rows: list[dict] = []
+    for (k, _pos, ntok) in kept:
+        turn = transcript.turns[k]
         readouts: dict[str, dict] = {}
         if turn.role == "assistant":
             for phrasing in _phrasings(rendering, full_cross):
-                q_msgs = build_messages(
-                    transcript, k, with_timestamps=with_ts,
-                    extra_user=READOUT_PROMPTS[phrasing],
+                q_rendered = render(
+                    session,
+                    build_messages(transcript, k, with_timestamps=with_ts,
+                                   extra_user=READOUT_PROMPTS[phrasing]),
+                    add_generation_prompt=True,
                 )
-                q_rendered = render(session, q_msgs, add_generation_prompt=True)
                 seed = _seed_for(transcript.id, rendering, k, phrasing)
                 raw = ask_readout(session, q_rendered, seed=seed)
-                readouts[phrasing] = {
-                    "raw": raw, "seconds": parse_duration(raw),
-                }
-
+                readouts[phrasing] = {"raw": raw, "seconds": parse_duration(raw)}
+            release_memory(session.device)
         rows.append({
             "transcript_id": transcript.id,
             "schedule": transcript.schedule,
@@ -149,19 +166,14 @@ def _emit_transcript_rendering(
             "turn_idx": k,
             "role": turn.role,
             "gt_elapsed_s": turn.elapsed_s,
-            "prompt_tokens": n_tokens,
+            "prompt_tokens": ntok,
             "readouts": readouts,
         })
-        # Release per turn: each turn is a different context length, so the MPS
-        # caching allocator would otherwise hold a multi-GB block per distinct
-        # length across the whole run.
-        release_memory(session.device)
 
-    if states:
-        save_transcript_states(
-            sidecar_path(hidden_dir, transcript.id, rendering),
-            states=states, elapsed_by_turn=elapsed_by_turn,
-        )
+    save_transcript_states(
+        sidecar_path(hidden_dir, transcript.id, rendering),
+        states=states, elapsed_by_turn=elapsed_by_turn,
+    )
     release_memory(session.device)
     return rows, skipped
 

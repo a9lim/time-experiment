@@ -57,10 +57,16 @@ def render(session: Any, messages: list[dict[str, str]], *, add_generation_promp
     return rendered
 
 
-def count_tokens(session: Any, rendered_text: str) -> int:
-    """Token length of a rendered context (no forward pass) — for the
-    context-length safety cap before any expensive forward."""
-    return len(session.tokenizer(rendered_text, add_special_tokens=False)["input_ids"])
+def content_position(session: Any, rendered_text: str) -> tuple[int, int]:
+    """(last-content-token index, token count) for a rendered context — no
+    forward pass. The index is computed on this prefix's own tokenization; since
+    a shorter prefix render is a string-prefix of a longer one and the
+    last-content token is interior (before trailing turn markers), the index is
+    also valid in any longer render that contains this prefix. Used to (a) apply
+    the context cap and (b) supply pool positions for the single-pass capture.
+    """
+    ids = session.tokenizer(rendered_text, add_special_tokens=False)["input_ids"]
+    return last_content_index(ids, session.tokenizer), len(ids)
 
 
 # --- EOT activation capture ----------------------------------------------
@@ -86,6 +92,55 @@ def capture_eot(session: Any, rendered_text: str) -> tuple[dict[int, np.ndarray]
     )
     states = {int(L): v.detach().to(torch.float32).cpu().numpy() for L, v in caps.items()}
     return states, n_tokens
+
+
+def capture_multi_position(
+    session: Any, rendered_text: str, positions: list[int],
+) -> dict[int, np.ndarray]:
+    """Capture per-layer residual-stream vectors at MANY positions in ONE
+    forward pass over ``rendered_text``.
+
+    This is the memory-lean path for long transcripts: instead of one forward
+    per checkpoint turn (N forwards, N× the allocation churn), pool every
+    checkpoint's end-position in a single pass. Two memory wins vs a naive
+    per-turn loop:
+      - 1 forward instead of N (the MPS allocator sees one context size, not N).
+      - ``logits_to_keep=1`` skips the full-vocab logits tensor (~2GB at long
+        context) that capture never uses; falls back to a plain forward if the
+        model's forward doesn't accept the kwarg.
+
+    Returns ``{layer_idx: (len(positions), hidden_dim) float32}`` (host numpy).
+    """
+    enc = session.tokenizer(rendered_text, return_tensors="pt", add_special_tokens=False)
+    input_ids = enc["input_ids"].to(session.device)
+    seq = input_ids.shape[1]
+    pos_t = torch.tensor(
+        [min(max(int(p), 0), seq - 1) for p in positions], device=session.device,
+    )
+    layers = session.layers
+    captured: dict[int, torch.Tensor] = {}
+
+    def _make_hook(idx: int):
+        def _hook(module: Any, inp: Any, out: Any) -> None:
+            h = out if isinstance(out, torch.Tensor) else out[0]
+            # h: (1, seq, D) -> pool the requested rows -> (P, D), copy off the
+            # layer tensor so the forward can free it.
+            captured[idx] = h[0].index_select(0, pos_t).detach().to(torch.float32)
+        return _hook
+
+    handles = [layers[i].register_forward_hook(_make_hook(i)) for i in range(len(layers))]
+    try:
+        with torch.inference_mode():
+            try:
+                session.model(input_ids=input_ids, use_cache=False, logits_to_keep=1)
+            except TypeError:
+                session.model(input_ids=input_ids, use_cache=False)
+        if session.device.type == "mps":
+            torch.mps.synchronize()
+    finally:
+        for hh in handles:
+            hh.remove()
+    return {int(L): v.cpu().numpy() for L, v in captured.items()}
 
 
 # --- verbal readout (stateless fork) -------------------------------------

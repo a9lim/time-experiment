@@ -27,6 +27,27 @@ stateless=True` — never commits to the loom).
 The probe target is **log(elapsed seconds)**; CV is **grouped by transcript**
 (within-conversation turns are correlated — never split them across train/test).
 
+## Memory (MPS) — read before scaling context length
+
+A long-context forward on a large model (gemma-4-31b-it ≈ 62GB resident) is the
+hazard on unified-memory MPS. Disciplines baked into `10_emit` + `capture.py`:
+
+- **One forward per (transcript, rendering)**, not one per turn:
+  `capture_multi_position` pools every checkpoint's end-position in a single
+  pass (`logits_to_keep=1` skips the ~2GB full-vocab logits capture never uses).
+  Collapses ~10× the allocation churn that the per-turn loop caused.
+- **`release_memory()`** (gc + `torch.mps.empty_cache()`) after the capture and
+  after each readout — MPS's allocator hoards a block per distinct context
+  length otherwise.
+- **`--max-context-tokens`** (default 1500) skips any turn whose context exceeds
+  the cap *before* the forward — the hard backstop. Raise it on a small model;
+  keep it modest on the 31B.
+
+Steady state ≈ model + one capped-length forward (~67GB on a 128GB box). Two
+machine crashes came from violating this (unbounded per-size cache + a long
+forward on the 31B). Validate a new long-context run on a small model
+(`TIME_MODEL=llama32_3b`) or with Activity Monitor open before scaling.
+
 ## Conventions
 
 - `.venv/bin/python` or an activated venv; plain `python` is unreliable here.
