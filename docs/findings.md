@@ -146,3 +146,36 @@ Run completed bounded at ~70GB process memory (128GB machine) after the
 single-forward-per-transcript + LM-head-skip + per-op `empty_cache` + context
 cap. The earlier per-turn loop OOM-crashed the machine at long context; see
 AGENTS.md "Memory (MPS)".
+
+## Pilot 3 — intermittent timestamps (gemma-4-31b-it, 2026-06-06)
+
+Does a clock on only every 4th turn get integrated (extrapolate the rate) or
+ignored (fall back to length)? Uniform-rate transcripts at 4 rates
+(5min/1h/6h/1d per turn), three renderings (full / every-4th / none), readouts
+on un-timestamped turns. Uniform rate at fixed length-per-turn dissociates
+rate-tracking from length. 24 transcripts × 3, 0 refusals.
+
+| rendering | log-log slope | ρ(stated,true) | rate-sensitivity @fixed length |
+|---|---|---|---|
+| timestamped (ceiling) | 1.01 | 0.999 | 0.997 |
+| intermittent (every 4th) | 1.06 | 0.864 | **0.799** |
+| untimestamped (floor) | 0.03 | 0.107 | −0.134 |
+
+### Sparse clock → reads the last anchor, doesn't extrapolate
+
+- **No length fallback.** Intermittent rate-sensitivity is 0.80 — far above the
+  no-clock floor (−0.13), near the full-clock ceiling. With a consistent jump
+  the model *uses* the sparse anchors.
+- **But it latches to the most recent stamp and does not project forward:**
+  `stated/true(last-anchor) = 1.00`, `stated/true(current-turn) = 0.73`. It
+  reports elapsed-to-the-last-timestamp and drops the un-timestamped turns since
+  (the 0.73 is exactly the (k−3)/k undercount at stride 4). Reactive to explicit
+  timestamps, not predictive.
+
+### The graded picture across clock density
+- **No clock** → length-driven, decoupled from real time (inflates up to ~100×).
+- **Sparse clock** → reads the last anchor accurately, undercounts the gap since.
+- **Full clock** → accurate (ρ 0.999).
+
+The model holds a clock only as fresh as its most recent explicit timestamp; it
+does not maintain a running extrapolated clock across un-timestamped turns.
