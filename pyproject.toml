@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "time-experiment"
+version = "0.0.1"
+description = "Probing how LLMs represent elapsed conversational time."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "torch",
+    # saklas (model loading + whitener) and llmoji-study (model registry,
+    # sidecar conventions) are installed editable from sibling repos:
+    #   pip install -e ../saklas
+    #   pip install -e ../llmoji
+    #   pip install -e ../llmoji-study
+    #   pip install -e .
+]
+
+[tool.setuptools.packages.find]
+include = ["time_experiment*"]
