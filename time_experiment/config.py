@@ -158,6 +158,20 @@ ASSIST_HEAD = "It's been "
 CONSTANT_PHRASE = "5 minutes"
 PREFILL_MODES = ("constant", "true")
 
+# Log-spaced duration grid for the soft verbal readout: after ``It's been `` we
+# score each phrase's teacher-forced log-prob and softmax over the grid -> a
+# distribution over how long the model thinks it's been (no sampling, no
+# refusals; the model's own W_U readout of the slot, symmetric to the probe's
+# activation readout). Phrases are the model's natural continuations; the
+# attached seconds are the grid's support for the expected-log point estimate.
+DURATION_GRID: list[tuple[str, float]] = [
+    ("1 second", 1.0), ("5 seconds", 5.0), ("15 seconds", 15.0), ("30 seconds", 30.0),
+    ("1 minute", 60.0), ("3 minutes", 180.0), ("5 minutes", 300.0), ("10 minutes", 600.0),
+    ("30 minutes", 1800.0), ("1 hour", 3600.0), ("2 hours", 7200.0), ("6 hours", 21600.0),
+    ("12 hours", 43200.0), ("1 day", 86400.0), ("3 days", 259200.0), ("1 week", 604800.0),
+    ("2 weeks", 1209600.0),
+]
+
 # --- run knobs ------------------------------------------------------------
 # Hard safety backstop: skip any turn whose rendered context exceeds this many
 # tokens. Long-context forwards on a large model (e.g. 31B) on unified-memory

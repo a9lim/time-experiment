@@ -83,10 +83,10 @@ def decode(rows, cache, probe, oof_lookup, rendering):
     ov_int = float(np.median(np.exp(internal) / np.exp(gt_log)))
     refusals = int((~fin_v).sum())
     recs = [{"rendering": rendering, "id": str(i), "turn_idx": int(t), "schedule": str(s),
-             "gt_s": float(math.exp(g)), "internal_s": float(math.exp(ic)),
+             "tokens": float(tk), "gt_s": float(math.exp(g)), "internal_s": float(math.exp(ic)),
              "verbal_s": (float(v) if _finite(v) else "")}
-            for i, t, s, g, ic, v in zip(d["groups"], d["turn_idx"], d["schedule"],
-                                         gt_log, internal, verbal_s)]
+            for i, t, s, tk, g, ic, v in zip(d["groups"], d["turn_idx"], d["schedule"],
+                                             d["tokens"], gt_log, internal, verbal_s)]
     return {
         "n": int(len(gt_log)), "refusals": refusals,
         "corr_internal_gt": {"pearson": ig[0], "spearman": ig[1]},

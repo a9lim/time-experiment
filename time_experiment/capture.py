@@ -29,7 +29,11 @@ unit-testable without torch); it's re-exported here for convenience.
 
 from __future__ import annotations
 
+import copy
 import gc
+import math
+import random
+from datetime import timedelta
 from typing import Any
 
 import numpy as np
@@ -38,8 +42,15 @@ import torch
 from saklas import SamplingConfig
 from saklas.core.vectors import _capture_all_hidden_states, last_content_index
 
-from .config import ASSIST_HEAD, READOUT_MAX_TOKENS, READOUT_TEMPERATURE
+from .config import (
+    ASSIST_HEAD, BASE_DATETIME, DURATION_GRID, READOUT_MAX_TOKENS,
+    READOUT_TEMPERATURE, SCHEDULES,
+)
 from .durations import parse_duration  # noqa: F401  (re-exported)
+from .transcripts import TS_FORMAT
+
+_GRID_SECONDS = np.array([s for _, s in DURATION_GRID], dtype=np.float64)
+_GRID_LOG = np.log(_GRID_SECONDS)
 
 _UNITS = (("day", 86400.0), ("hour", 3600.0), ("minute", 60.0), ("second", 1.0))
 
@@ -147,3 +158,82 @@ def ask_readout(session: Any, rendered_question: str, *, seed: int) -> str:
         stateless=True, raw=True, thinking=False,
     )
     return result.text
+
+
+def verbal_distribution(session: Any, messages_with_question: list[dict[str, str]],
+                        ) -> tuple[float, np.ndarray]:
+    """The verbal estimate as a SOFT DISTRIBUTION over durations, read from the
+    logits at the slot (the model's own ``W_U`` readout — symmetric to the
+    probe's activation readout of the same slot).
+
+    After ``It's been ``, score each ``DURATION_GRID`` phrase by its
+    teacher-forced log-prob and softmax over the grid -> a distribution over how
+    long the model thinks it's been. No sampling (deterministic, denoised) and no
+    refusals (every turn yields a distribution); the spread is the model's
+    uncertainty. Efficient: one forward over the shared prefix, then each
+    multi-token candidate scored against a copy of the prefix KV cache (cheap
+    continuation forwards, validated identical to brute per-candidate forwards).
+
+    Returns ``(point_seconds, probs)`` — ``point_seconds`` is the expected-log
+    estimate ``exp(Σ p_i log sec_i)``; ``probs`` is the grid distribution (len ==
+    ``DURATION_GRID``) for offline soft analyses (mode/median/spread)."""
+    tok, model, dev = session.tokenizer, session.model, session.device
+    prefix = render(session, messages_with_question, add_generation_prompt=True) + ASSIST_HEAD
+    pids = tok(prefix, add_special_tokens=False)["input_ids"]
+    # candidate continuation tokens = suffix after the prefix (robust to the
+    # tokenizer merging the leading space into the first duration token).
+    cand_ids = []
+    for phrase, _ in DURATION_GRID:
+        full = tok(prefix + phrase, add_special_tokens=False)["input_ids"]
+        cand_ids.append(full[len(pids):])
+
+    with torch.inference_mode():
+        po = model(torch.tensor([pids], device=dev), use_cache=True)
+        past = po.past_key_values
+        last_lp = torch.log_softmax(po.logits[0, -1].float(), dim=-1).cpu()
+        logps = np.full(len(cand_ids), -1e30, dtype=np.float64)
+        for i, cids in enumerate(cand_ids):
+            if not cids:
+                continue
+            s = float(last_lp[cids[0]])
+            if len(cids) > 1:
+                past_c = copy.deepcopy(past)
+                co = model(torch.tensor([cids], device=dev),
+                           past_key_values=past_c, use_cache=True)
+                lp = torch.log_softmax(co.logits[0].float(), dim=-1).cpu()
+                del co, past_c   # free this candidate's cache copy before the next (MPS)
+                for j in range(len(cids) - 1):
+                    s += float(lp[j, cids[j + 1]])
+            logps[i] = s
+        del past
+    p = np.exp(logps - logps.max())
+    p /= p.sum()
+    point = float(math.exp(float((p * _GRID_LOG).sum())))
+    return point, p
+
+
+# --- elicitation rendering helpers (shared by capture + reverbal) ---------
+def ts_spec(rendering: str, turn_count: int, timestamp_stride: int) -> dict:
+    """``build_messages`` kwargs for a rendering's timestamp pattern."""
+    if rendering == "untimestamped":
+        return {"with_timestamps": False}
+    if rendering == "intermittent":
+        return {"timestamp_turns": {k for k in range(turn_count) if k % timestamp_stride == 0}}
+    return {"with_timestamps": True}
+
+
+def inject_timestamps(messages: list[dict], seed: int) -> tuple[list[dict], list[float]]:
+    """Prefix each natural message with a bracketed timestamp on a 'minutes'
+    cadence; return (timestamped messages, elapsed-seconds per turn) — the
+    injected-clock control for T3."""
+    rng = random.Random(seed)
+    lo, hi = SCHEDULES["minutes"]
+    llo, lhi = math.log(lo), math.log(hi)
+    elapsed, out, cum = [], [], 0.0
+    for i, m in enumerate(messages):
+        if i > 0:
+            cum += math.exp(rng.uniform(llo, lhi))
+        elapsed.append(cum)
+        ts = (BASE_DATETIME + timedelta(seconds=cum)).strftime(TS_FORMAT)
+        out.append({"role": m["role"], "content": f"[{ts}] {m['content']}"})
+    return out, elapsed

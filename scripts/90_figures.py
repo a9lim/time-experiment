@@ -96,7 +96,6 @@ def fig_t1(M, fdir):
 
 def fig_t2(M, fdir):
     recs = _load_csv(M.data_dir / "decode_rows.csv")
-    felt = json.loads((M.data_dir / "felt.json").read_text()) if (M.data_dir / "felt.json").exists() else {}
     if not recs:
         return
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.7))
@@ -115,15 +114,27 @@ def fig_t2(M, fdir):
         ax.set_xlabel("true elapsed"); ax.set_title(title)
     axes[0].set_ylabel("estimated elapsed"); axes[0].legend(loc="lower right", fontsize=8)
 
-    fl = felt.get("felt_length", {}).get("by_schedule", {})
-    for sch, rungs in fl.items():
-        x = [r["med_tokens"] for r in rungs]
-        axes[2].plot(x, [r["med_felt_s"] for r in rungs], "-o", ms=4, label=f"{sch} felt")
-        axes[2].plot(x, [r["med_real_s"] for r in rungs], "--", alpha=0.5, label=f"{sch} real")
-    axes[2].set_yscale("log"); axes[2].yaxis.set_major_formatter(SECFMT)
-    axes[2].set_xlabel("conversation length (tokens)"); axes[2].set_ylabel("duration")
-    axes[2].set_title("(c) felt tracks length, not the clock"); axes[2].legend(fontsize=6, ncol=2)
-    axes[2].grid(True, alpha=0.3)
+    # (c) verbal + probe reads vs context length (no clock): do either track length?
+    un = [r for r in recs if r["rendering"] == "untimestamped"]
+    if un:
+        tok = np.array([float(r["tokens"]) for r in un])
+        order = np.argsort(tok)
+        tok = tok[order]
+        internal = np.array([float(r["internal_s"]) for r in un])[order]
+        verbal = np.array([float(r["verbal_s"]) if r["verbal_s"] else np.nan for r in un])[order]
+        gt = np.array([float(r["gt_s"]) for r in un])[order]
+        axes[2].scatter(tok, gt, s=14, color=C_REAL, alpha=0.35, label="true elapsed")
+        axes[2].scatter(tok, internal, s=16, color=C_INT, alpha=0.7, label="probe (internal)")
+        axes[2].scatter(tok, verbal, s=16, color=C_VERB, alpha=0.7, label="verbal (felt)")
+        for y, c in ((internal, C_INT), (verbal, C_VERB)):  # light log-log trend lines
+            m = np.isfinite(y)
+            if m.sum() > 3:
+                b = np.polyfit(np.log(tok[m]), np.log(y[m]), 1)
+                axes[2].plot(tok[m], np.exp(np.polyval(b, np.log(tok[m]))), "-", color=c, lw=1.3, alpha=0.8)
+        axes[2].set_yscale("log"); axes[2].yaxis.set_major_formatter(SECFMT)
+        axes[2].set_xlabel("context length (tokens)"); axes[2].set_ylabel("duration")
+        axes[2].set_title("(c) no clock: verbal + probe vs context length")
+        axes[2].legend(fontsize=7); axes[2].grid(True, alpha=0.3)
     fig.suptitle("T2 — felt time is a length-driven prior (no internal felt-elapsed beyond length)",
                  fontsize=12.5, fontweight="bold", y=1.0)
     fig.tight_layout(); fig.savefig(fdir / "fig_t2_felt.png", dpi=140, bbox_inches="tight")

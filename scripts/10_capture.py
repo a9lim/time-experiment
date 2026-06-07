@@ -36,7 +36,6 @@ import math
 import sys
 import time
 import zlib
-from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -44,15 +43,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from saklas import SaklasSession  # noqa: E402
 
 from time_experiment.capture import (  # noqa: E402
-    ask_readout, capture_slot, content_position, elicit_render, humanize,
-    parse_duration, release_memory, render, slot_token,
+    capture_slot, content_position, elicit_render, humanize, inject_timestamps,
+    release_memory, slot_token, ts_spec, verbal_distribution,
 )
 from time_experiment.config import (  # noqa: E402
-    BASE_DATETIME, CONSTANT_PHRASE, ELICIT_PROMPT, MAX_CONTEXT_TOKENS, SCHEDULES,
-    TRANSCRIPTS_DIR, current_model,
+    CONSTANT_PHRASE, ELICIT_PROMPT, MAX_CONTEXT_TOKENS, TRANSCRIPTS_DIR, current_model,
 )
 from time_experiment.storage import save_states, sidecar_path  # noqa: E402
-from time_experiment.transcripts import TS_FORMAT, build_messages, load_corpus  # noqa: E402
+from time_experiment.transcripts import build_messages, load_corpus  # noqa: E402
 
 try:
     from llmoji_study.capture import (  # noqa: E402
@@ -64,33 +62,6 @@ except Exception:  # pragma: no cover
 
 def _seed(*parts: object) -> int:
     return zlib.crc32("|".join(str(p) for p in parts).encode()) & 0x7FFF_FFFF
-
-
-def _ts_spec(rendering: str, turn_count: int, timestamp_stride: int) -> dict:
-    """build_messages kwargs for a rendering's timestamp pattern."""
-    if rendering == "untimestamped":
-        return {"with_timestamps": False}
-    if rendering == "intermittent":
-        return {"timestamp_turns": {k for k in range(turn_count) if k % timestamp_stride == 0}}
-    return {"with_timestamps": True}
-
-
-def _inject_timestamps(messages: list[dict], seed: int) -> tuple[list[dict], list[float]]:
-    """Prefix each natural message with a bracketed timestamp on a 'minutes'
-    cadence; return (timestamped messages, elapsed-seconds per turn) — the
-    injected-clock control for T3."""
-    import random
-    rng = random.Random(seed)
-    lo, hi = SCHEDULES["minutes"]
-    llo, lhi = math.log(lo), math.log(hi)
-    elapsed, out, cum = [], [], 0.0
-    for i, m in enumerate(messages):
-        if i > 0:
-            cum += math.exp(rng.uniform(llo, lhi))
-        elapsed.append(cum)
-        ts = (BASE_DATETIME + timedelta(seconds=cum)).strftime(TS_FORMAT)
-        out.append({"role": m["role"], "content": f"[{ts}] {m['content']}"})
-    return out, elapsed
 
 
 class Capturer:
@@ -124,11 +95,11 @@ class Capturer:
                           f"phrase={phrase!r} slot={slot_token(self.s, rendered)!r}")
                 states, ntok = capture_slot(self.s, rendered)
                 release_memory(self.s.device)
-                # verbal readout once per turn, on the first mode that lands.
+                # verbal readout once per turn, on the first mode that lands:
+                # the soft duration distribution from the slot logits (no refusals).
                 if self.do_verbal and verbal is None:
-                    qr = render(self.s, t["msgs_q"], add_generation_prompt=True)
-                    raw = ask_readout(self.s, qr, seed=_seed(source, conv_id, rendering, t["turn_idx"]))
-                    verbal = {"raw": raw, "seconds": parse_duration(raw)}
+                    sec, dist = verbal_distribution(self.s, t["msgs_q"])
+                    verbal = {"seconds": sec, "dist": [round(float(x), 5) for x in dist]}
                     release_memory(self.s.device)
                 by_mode[mode][t["turn_idx"]] = states
                 elapsed_by_mode[mode][t["turn_idx"]] = (
@@ -139,8 +110,8 @@ class Capturer:
                     "gt_elapsed_s": (float(gt) if isinstance(gt, (int, float)) and gt else None),
                     "tokens": ntok, "schedule": t.get("schedule"), "variant": t.get("variant"),
                     "phrase": phrase,
-                    "verbal_raw": (verbal or {}).get("raw") if mode == "constant" else None,
                     "verbal_seconds": (verbal or {}).get("seconds") if mode == "constant" else None,
+                    "verbal_dist": (verbal or {}).get("dist") if mode == "constant" else None,
                 })
         for mode in self.modes:
             if by_mode[mode]:
@@ -218,7 +189,7 @@ def main() -> None:
                 for rendering in renderings:
                     if all((("scripted", tx.id, rendering, m) in done) for m in modes):
                         continue
-                    ts = _ts_spec(rendering, tx.turn_count, args.timestamp_stride)
+                    ts = ts_spec(rendering, tx.turn_count, args.timestamp_stride)
                     turns = [
                         {"turn_idx": turn.idx, "gt": turn.elapsed_s, "schedule": tx.schedule,
                          "variant": None,
@@ -234,7 +205,7 @@ def main() -> None:
             for conv_id, loom in looms.items():
                 msgs = loom["messages"]
                 variant = loom.get("variant")
-                ts_msgs, elapsed = _inject_timestamps(msgs, _seed(conv_id, "ts"))
+                ts_msgs, elapsed = inject_timestamps(msgs, _seed(conv_id, "ts"))
                 for rendering, rmsgs, gts in (
                     ("untimestamped", msgs, [None] * len(msgs)),
                     ("timestamped", ts_msgs, elapsed)):
