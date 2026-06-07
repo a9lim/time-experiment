@@ -138,16 +138,23 @@ def fig1_aim1(fit: dict) -> None:
     r2 = np.array([d["r2"] for d in fit["per_layer"]])
     rho = np.array([d["spearman"] for d in fit["per_layer"]])
     best = fit["best_layer"]
+    r2_stack = fit["r2"]                          # deployed probe = all-layer stack
+    r2_single = fit.get("r2_single_best", float(r2.max()))
+    best_rho = next((d["spearman"] for d in fit["per_layer"] if d["layer"] == best),
+                    float(rho.max()))
+    top = max(r2_stack, float(r2.max()))
 
     fig, (axL, axR) = plt.subplots(
         1, 2, figsize=(11, 4.2), gridspec_kw={"width_ratios": [1.7, 1]})
 
-    # (a) per-layer profile
+    # (a) per-layer single-layer profile, with the deployed stack overlaid
     axL.axhline(0, color="#cbd5e1", lw=0.8, zorder=0)
-    axL.plot(layers, r2, "-o", ms=3, color=C_INTERNAL, label="probe CV $R^2$")
+    axL.plot(layers, r2, "-o", ms=3, color=C_INTERNAL, label="single-layer CV $R^2$")
+    axL.axhline(r2_stack, color=C_CEIL, ls="-", lw=1.6, alpha=0.9,
+                label=f"stack (all layers) $R^2$={r2_stack:.2f}")
     ax2 = axL.twinx()
     ax2.plot(layers, rho, "-", lw=1.4, color=C_VERBAL, alpha=0.85,
-             label="Spearman $\\rho$")
+             label="single-layer $\\rho$")
     ax2.set_ylabel("Spearman $\\rho$", color=C_VERBAL)
     ax2.tick_params(axis="y", colors=C_VERBAL)
     ax2.spines["right"].set_visible(True)
@@ -157,31 +164,33 @@ def fig1_aim1(fit: dict) -> None:
 
     axL.axvline(best, color=C_REAL, ls="--", lw=1, alpha=0.6)
     axL.annotate(
-        f"L{best}\n$R^2$={fit['r2']:.2f}, $\\rho$={fit['spearman']:.2f}",
-        xy=(best, fit["r2"]), xytext=(best - 16, fit["r2"] - 0.06),
+        f"best layer L{best}\n$R^2$={r2_single:.2f}, $\\rho$={best_rho:.2f}",
+        xy=(best, r2_single), xytext=(best - 22, r2_single - 0.10),
         fontsize=9, color=C_REAL,
         arrowprops=dict(arrowstyle="->", color=C_REAL, lw=0.9))
     axL.set_xlabel("layer")
     axL.set_ylabel("CV $R^2$ (log elapsed)", color=C_INTERNAL)
     axL.tick_params(axis="y", colors=C_INTERNAL)
-    axL.set_title("(a) elapsed-time probe, per layer  (clock visible)")
-    axL.set_ylim(-0.08, 0.58)
+    axL.set_title("(a) elapsed-time probe, per layer + stack  (clock visible)")
+    axL.set_ylim(-0.08, top * 1.18)
     h1, l1 = axL.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     axL.legend(h1 + h2, l1 + l2, loc="upper left")
 
-    # (b) position-confound control at the best layer
-    names = ["probe\n$R^2$", "log-tokens\nbaseline", "partial $R^2$\n(tokens out)"]
-    vals = [fit["r2"], fit["r2_tokens"], fit["r2_partial"]]
-    cols = [C_INTERNAL, C_LENGTH, C_CEIL]
-    bars = axR.bar(names, vals, color=cols, width=0.62)
+    # (b) the stack beats one layer beats length, and survives token-partialling
+    names = ["stack\n(all layers)", f"best layer\nL{best}",
+             "log-tokens\nbaseline", "partial $R^2$\n(tokens out)"]
+    vals = [r2_stack, r2_single, fit["r2_tokens"], fit["r2_partial"]]
+    cols = [C_INTERNAL, "#7dd3fc", C_LENGTH, C_CEIL]
+    bars = axR.bar(names, vals, color=cols, width=0.66)
     for b, v in zip(bars, vals):
         axR.text(b.get_x() + b.get_width() / 2, v + 0.012, f"{v:.2f}",
-                 ha="center", va="bottom", fontsize=9.5, fontweight="bold")
+                 ha="center", va="bottom", fontsize=9, fontweight="bold")
     axR.set_ylim(0, max(vals) * 1.25)
     axR.set_ylabel("$R^2$ (log elapsed)")
-    axR.set_title(f"(b) not just position  (L{best})")
-    axR.margins(x=0.08)
+    axR.set_title("(b) all layers > one layer > length")
+    axR.tick_params(axis="x", labelsize=8)
+    axR.margins(x=0.06)
 
     fig.suptitle(
         "The model linearly represents elapsed time — and it isn't merely context length",

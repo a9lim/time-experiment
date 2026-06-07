@@ -28,7 +28,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from time_experiment.analysis import (  # noqa: E402
-    StatesCache, assemble_layer, cv_predict, load_probe, load_rows,
+    StatesCache, assemble_layer, cv_predict, load_rows,
 )
 from time_experiment.config import BASE_DATETIME, current_model  # noqa: E402
 
@@ -44,7 +44,8 @@ def main() -> None:
     cache = StatesCache(M.hidden_dir)
     L = args.layer
     if L < 0:
-        _, L, _ = load_probe(M.data_dir / "probe.npz")
+        # geometry is inherently single-layer: use the interpretable best layer.
+        L = int(json.loads((M.data_dir / "fit.json").read_text())["best_layer"])
     print(f"model: {M.short_name}  layer: L{L}  (timestamped rendering)")
 
     d = assemble_layer(M, rows, L, rendering="timestamped", cache=cache)

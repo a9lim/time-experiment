@@ -61,6 +61,10 @@ class TranscriptStates:
     def vec(self, turn: int, layer: int) -> np.ndarray:
         return self.H[self._turn_pos[turn], self._layer_pos[layer], :]
 
+    def turn_all_layers(self, turn: int) -> np.ndarray:
+        """All layers' vectors at one turn: (L, D) — for the all-layer probes."""
+        return self.H[self._turn_pos[turn]]
+
 
 def load_transcript_states(path: Path) -> TranscriptStates:
     d = np.load(path)

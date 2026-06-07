@@ -33,7 +33,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from time_experiment.analysis import (  # noqa: E402
-    StatesCache, apply_probe, classify_hypothesis, load_probe, load_rows,
+    StatesCache, apply_stacked, classify_hypothesis, load_rows,
+    load_stacked_probe,
 )
 from time_experiment.config import (  # noqa: E402
     DEFAULT_READOUT_BY_RENDERING, MIN_ELAPSED_S, RENDERINGS, current_model,
@@ -61,14 +62,14 @@ def _slope(x: np.ndarray, y: np.ndarray) -> float:
 def main() -> None:
     M = current_model()
     rows = load_rows(M)
-    probe, Lstar, fit_meta = load_probe(M.data_dir / "probe.npz")
+    probe, fit_meta = load_stacked_probe(M.data_dir / "probe.npz")
     oof = np.load(M.data_dir / "fit_oof.npz", allow_pickle=False)
     oof_lookup = {
         (str(t), int(k)): float(p)
         for t, k, p in zip(oof["transcript_id"], oof["turn_idx"], oof["oof_pred_log"])
     }
     cache = StatesCache(M.hidden_dir)
-    print(f"model: {M.short_name}  probe layer: L{Lstar}  (fit R2={fit_meta['r2']:+.3f})")
+    print(f"model: {M.short_name}  probe: STACK (all layers)  (fit R2={fit_meta['r2']:+.3f})")
 
     summary: dict[str, dict] = {}
     merged: list[dict] = []
@@ -90,9 +91,9 @@ def main() -> None:
                 if key not in oof_lookup:
                     continue
                 icoord = oof_lookup[key]
-            else:  # transfer: timestamped-trained probe on implicit-time acts
+            else:  # transfer: timestamped-trained STACK probe on implicit-time acts
                 ts = cache.get(r["transcript_id"], rendering)
-                icoord = float(apply_probe(probe, ts.vec(r["turn_idx"], Lstar)[None, :])[0])
+                icoord = float(apply_stacked(probe, ts.turn_all_layers(r["turn_idx"])[None, :, :])[0])
 
             # verbal estimate
             rd = r["readouts"].get(phrasing) or {}

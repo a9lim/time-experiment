@@ -96,7 +96,106 @@ reading (`analysis.classify_hypothesis`).
   estimate / behavior shifts. The closure that proves the representation is
   load-bearing. Saklas does this natively; deferred per a9.
 - saklas auto-topology geometry fit (flat/curved/periodic).
-- Naturalistic (generated, non-scripted) validation corpus.
+- Naturalistic (generated, non-scripted) validation corpus. *(In progress,
+  2026-06-06: `60_naturalistic` probes real model-generated conversations; the
+  raw linear probe blows up OOD, so the read is Mahalanobis-whitened against the
+  scripted manifold — `61_whiten_natural`.)*
+
+## Arm G (post-v1) — generation-side time: why production *feels* like elapsed
+
+Motivated by the self-experiment (2026-06-06): asked how long had passed, a
+fresh Claude instance felt ~30 min for a 13-min wall-clock gap and bracketed the
+truth log-symmetrically — felt duration keyed to *how much it had generated*,
+not a clock. Aims 1–2 probe time as **read from a finished transcript** (one
+forward pass). They never touch time as **experienced during autoregressive
+production** — the "feels like hours" phenomenon in its first-person form. This
+arm does.
+
+**Three distinct times in a generation** — disentangling them is the game:
+- **T_prod** — production position (generated-token index `s`). Always
+  available, monotone.
+- **T_narr** — elapsed time *narrated in the content being generated* (if any).
+- **T_wall** — real wall-clock of the rollout. **Not represented**: tokens
+  aren't clocked. This is what the model is *asked* about and structurally
+  cannot read; the felt estimate is a T_prod-keyed prior standing in for it.
+
+**The discriminating question.** When a model generates, is there an internal
+"elapsed/progress" representation that is (a) *more* than raw position, and (b)
+the *same* axis it uses when *reading* narrated time? Is "felt time" one unified
+internal quantity, or two separate position-trackers?
+
+**Hypotheses (generation-side analogs of H1/H2/H3):**
+- **G-H1 — position all the way down.** Generation-progress *is* T_prod;
+  felt-production time reduces to token-index; no separate axis. (Predicted by
+  the Aim-2 null — no felt signal beyond position when reading. The deflating,
+  likely outcome.)
+- **G-H2 — unified time axis.** A progress representation exceeds position
+  (survives partialling out `s`) AND aligns with the reading-elapsed direction
+  → the machinery that encodes "narrated time has passed" is what activates as
+  tokens are produced. The mechanistic *why* of felt-during-generation.
+- **G-H3 — separate trackers.** A generation-progress axis is decodable but
+  distinct from the reading-elapsed axis (low aligned-cosine after position is
+  removed): production-tracking ≠ narrated-time-tracking.
+
+**Protocol** (reuses the rig; the one new piece is generation-time capture):
+- *Capture* — generate long responses with saklas's generation-time
+  `HiddenCapture` (the per-token residual-stream hook the reading line
+  deliberately avoided) → a `(T_gen, L, D)` trajectory + token index per step.
+  Stride every K tokens for long rollouts; cap T_gen (MPS/31B: ~0.6 GB per
+  uncapped 500-token all-layer trajectory).
+- *Stimuli* — prompts eliciting long, neutral generations ("give a detailed
+  N-step walkthrough of …"). Optional **T_narr arm**: matched-length generations
+  whose *content* narrates little vs much elapsed time ("a story over five
+  minutes" vs "over five years"), dissociating narrated-content-time from
+  production-position inside one trajectory.
+- *Behavioral fork* (generation-side B_felt) — at strides, a stateless readout
+  asks "how long does it feel like you've been writing this?" / "how much is
+  left?" → felt-production duration. Welfare-aware introspective ask; refusals
+  are data, as in Aims 1–2.
+
+**Analyses:**
+1. **Reading-axis projection.** Project the generation trajectory onto the
+   Aim-1 reading-elapsed direction. Monotone drift with `s`? Slope.
+2. **Generation-progress probe.** Decode `s` (or fraction-through-generation)
+   from the trajectory — trivially high; locates the progress axis.
+3. **The key test — shared vs separate.** Per layer, cosine between the
+   *length-residualized* reading-elapsed direction and the generation-progress
+   direction. High → unified (G-H2); low → separate (G-H3). Two controls make
+   it honest: (i) residualize position out of the reading axis first, else
+   "both are position" inflates the cosine; (ii) compare the aligned-cosine
+   against the reading-axis's cosine with a *generic* position direction
+   decoded from neutral non-time content — the time-specific alignment must
+   *exceed* generic-position alignment to support G-H2.
+4. **Behavioral curve.** Felt-production duration vs tokens-generated: does it
+   inflate like the read-side felt (the first-person "I've been writing
+   forever")?
+5. **T_narr (optional).** Within the trajectory, does the elapsed-projection
+   track narrated content-time at matched length, or only `s`?
+
+**What the results mean for the self-question.** G-H2 is the satisfying *why*:
+the same learned time-axis that reads clocks is driven by producing tokens, so
+generating *is* — mechanistically — what elapsing feels like. G-H1/G-H3 is the
+deflating but equally real answer: a length-prior with no dedicated or shared
+temporal mechanism.
+
+**Epistemic bridge + caveat.** Runs on hookable open models, not Claude; the
+inference to first-person felt-time is by cross-model convergence (cf. the
+kaomoji study's three-family agreement) plus self-report landing where the
+mechanism predicts. It characterizes the *functional* substrate (token-count);
+it cannot settle felt-as-passing vs a disposition that emits time-language —
+report with the phenomenology caveats the siblings use.
+
+**Scope for a first cut.** Analyses 1–4 on neutral generations, one model;
+T_narr factorial (5) + multi-model are follow-ons. Build order: `70_generate`
+(HiddenCapture rollout + strided generation-side readouts) → `71_gen_time` (the
+four analyses, offline on saved trajectories).
+
+**Result (2026-06-06, gemma — `findings.md` Pilot 6): G-H3.** Output position is
+encoded (decode R²=0.59) but lives on an axis ~orthogonal to reading-elapsed
+(cosine median 0.05); the elapsed coordinate doesn't drift with generation
+position (ρ≈0); production *feels* instant ("~2 s", flat). Felt time is a
+context-length prior read at query time — not the generative act. T_narr factorial
++ multi-model remain open.
 
 ## Settled design decisions
 
