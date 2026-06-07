@@ -36,6 +36,14 @@ TIME_MODEL=gemma python scripts/20_fit_manifold.py
 
 # 4. Aim 2 — decode the 3-way + transfer test + H1/H2/H3 reading.
 TIME_MODEL=gemma python scripts/30_decode.py
+
+# 5. Secondary analyses (read existing captures, no re-emit).
+TIME_MODEL=gemma python scripts/40_geometry.py       # log-t axis geometry
+TIME_VARIANT=inflation python scripts/41_inflation.py
+TIME_VARIANT=rates python scripts/42_intermittent.py
+
+# 6. Render the headline figures to figures/<model>/ (offline; reads artifacts).
+TIME_MODEL=gemma python scripts/50_figures.py
 ```
 
 `TIME_MODEL` selects a model short-name from the shared `llmoji_study` registry
@@ -64,6 +72,8 @@ time_experiment/
   analysis.py      dataset assembly, grouped-CV probing, H1/H2/H3 classifier
 scripts/
   00_gen_corpus.py 10_emit.py 20_fit_manifold.py 30_decode.py
+  40_geometry.py 41_inflation.py 42_intermittent.py   secondary analyses
+  50_figures.py                                        headline figures (offline)
 data/
   transcripts/<corpus>.jsonl            model-independent
   <model>/turns.jsonl                   per (transcript, rendering, turn) rows
