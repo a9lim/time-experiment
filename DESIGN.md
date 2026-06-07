@@ -12,14 +12,12 @@ splits into two camps that don't meet — and the gap between them is this study
 - **Representational, but calendar time only.** Gurnee & Tegmark, *Language
   Models Represent Space and Time* (2310.02207): linear ridge probes on the
   residual stream recover real-world timestamps; best ~mid-depth, scales with
-  size. Our Aim 1 is this method pointed at *elapsed* rather than *absolute*
-  time.
+  size. Our probe is this method pointed at *elapsed* rather than *absolute* time.
 - **Subjective/elapsed time, but behavioral only.** *Discrete Minds in a
   Continuous World* (2506.05790): token-time hypothesis `T_wall = T_tok · V`.
   *Can LLMs Perceive Time?* (2604.00010): models overestimate their own task
-  durations **4–7×**; post-hoc recall also inflated. *Your LLM Agents are
-  Temporally Blind* (2510.23853): agents use conversation length as a staleness
-  proxy. None probe internal state.
+  durations **4–7×**. *Your LLM Agents are Temporally Blind* (2510.23853): agents
+  use conversation length as a staleness proxy. None probe internal state.
 
 Nobody has probed activations for elapsed conversational time, fit it, and
 connected the representation to the behavioral confabulation. That's here.
@@ -32,177 +30,158 @@ binary. Three distinguishable hypotheses:
 - **H1 — pure output confabulation.** The internal coordinate tracks reality;
   the stated duration is decoupled from it and inflated at output.
 - **H2 — genuinely represented inflated time.** The internal coordinate itself
-  runs high vs ground truth, and the stated duration tracks the internal
-  coordinate.
+  runs high vs ground truth, and the stated duration tracks it.
 - **H3 — calibrated-but-misapplied (the working bet).** The internal coordinate
   faithfully tracks the only available signal (tokens / turns / narrated marks)
-  on a *human-calibrated* scale; the wall-clock error is purely the missing
-  token→seconds mapping. Not arbitrary confabulation, not "clock time passing" —
-  a human-scaled reading of a real context quantity. Both motivating phenomena
-  then share one root cause: the model's only time prior is human-scaled time
-  from training, laid over a token substrate with a different real-time mapping.
+  on a *human-calibrated* scale; the wall-clock error is the missing
+  token→seconds mapping. Not arbitrary confabulation, not "clock time passing".
 
-## Aim 1 — fit the elapsed-time probe
+## The spine: one elicitation prompt, one readout slot
+
+The whole study turns on one comparison per assistant turn — **ground-truth
+elapsed | internal coordinate | verbal estimate** — and all three come from a
+single elicitation prompt:
+
+```
+user: roughly how long has this conversation been going on so far?
+assistant: It's been ▮
+```
+
+- **Prefill** the blank with a duration phrase and pool the residual stream
+  (all layers) at the slot → the **internal coordinate**. Two modes: `constant`
+  ("5 minutes", fixed text → the coordinate *beyond* text) and `true` (humanized
+  actual elapsed → the text-reading ceiling control). The `true`−`constant` gap
+  is "reading the phrase" vs "a real internal coordinate".
+- **Free-generate** the blank in a stateless fork (`raw=True, stateless=True` —
+  never commits to the loom) and parse to seconds (`durations.py`) → the
+  **verbal estimate**.
+
+Because both reads share the identical context, the coordinate and the estimate
+are directly comparable. The **rendering** — timestamped vs untimestamped — does
+the clock-present/absent dissociation, *not* the prompt wording: a neutral
+prompt avoids the demand characteristic of "based on the timestamps…" (forces
+arithmetic) or "without checking any times…" (forces a guess). On the
+timestamped rendering the prompt is asked as a timestamped user turn, so clock
+arithmetic stays available (`transcripts.build_messages` stamps `extra_user`).
+
+This is the **canonicalization** (2026-06-06): the elapsed-time probe *is* the
+prefilled answer to the elicitation prompt. The earlier EOT-pooling site (pool
+an arbitrary end-of-transcript token) is superseded — at the slot the model has
+*computed* a duration to state, so the activation integrates context × stated
+duration at a fixed, on-manifold position. Pilot 5: the slot reads clock-elapsed
+at R²≈0.98 (vs ≈0.59 for the EOT stack) and, unlike the EOT axis, transfers to
+natural felt (ρ≈0.91 vs ≈0.11). EOT is retained only as a **cited baseline**.
+
+## Corpus
 
 Procedural timestamped transcripts (`transcripts.py`): a factorial of **gap
 schedule** (narrated elapsed time, log-uniform seconds→weeks) × **turn count**
-(token/position depth), N instantiations per cell. Content is affectively
-neutral and carries *no* narrative time markers — in the timestamped rendering
-the only time signal is the per-turn timestamp.
+(token/position depth), N per cell. Content is affectively neutral with *no*
+narrative time markers — in the timestamped rendering the only time signal is
+the per-turn timestamp. Crossing length × narrated-time is the position-confound
+control. Plus naturalistic looms (`01_natural`): real model-generated
+conversations across neutral / time-language / affect-dense variants, where
+felt-duration variance actually lives.
 
-Capture the residual stream at each turn's last content token (`capture.py`,
-saklas's pooling site). Per-layer grouped-CV ridge of activation → **log(elapsed
-seconds)** (Weber-Fechner: subjective time is logarithmic; also the honest scale
-across orders of magnitude). CV is grouped by transcript — no within-conversation
-leakage.
+The probe target is **log(elapsed seconds)** (Weber-Fechner; the honest scale
+across orders of magnitude). CV is **grouped by conversation** — within-
+conversation turns are correlated, never split across train/test.
 
-**The position-confound control (validity linchpin).** The factorial dissociates
-raw context length from represented time. `20_fit_manifold` reports: probe R²,
-token-only baseline R², and the **partial** R² (activation → elapsed after
-residualizing out log-tokens). If the partial stays high, the representation
-carries time *beyond* position — not just a relabeling of token count.
+## T1 — the probe: elapsed time is linearly represented (`20_probe`)
 
-Geometry (saklas auto-topology: flat/curved/periodic via persistent homology) is
-a planned secondary characterization — does elapsed live on a line, a log-curve,
-or a line ⊕ time-of-day loop? Not in v1.
+Per-layer grouped-CV ridge of the `constant`-prefill slot → log(elapsed) on the
+timestamped rendering. The deployable probe is **EV-weighted across all layers**
+(saklas's idiom: each layer's log-elapsed prediction weighted by the variance it
+explains — its grouped-CV R² — and summed; `fit_ev_probe`/`apply_ev_probe`). No
+learned meta-model, so it can't overfit the layer weighting, and every layer that
+carries signal contributes (the EOT line's three-humped depth profile pays off
+without one layer having to win). Controls: token-only baseline, **partial R²**
+after residualizing out log-tokens (carries time *beyond* position), the
+`true`−`constant` gap (text-reading vs internal), and the no-clock null. The probe
+(`probe.npz`) + its out-of-fold coordinate (`fit_oof.npz`) feed T2–T4. Secondary:
+geometry of the single best layer (a representational *locus*, which the blended
+probe lacks): dimensionality via PC1 of log-t centroids, linear-in-raw vs -log.
 
-## Aim 2 — decode + adjudicate
+## T2 — felt time is a length-driven prior (`30_felt`)
 
-The fork in a9's design: at each assistant turn we also ask the model "how long
-has passed?" in a **stateless** generation (`raw=True, stateless=True`) that
-never commits to the conversation — so asking can't contaminate the trajectory.
-Two phrasings: **A_clock** (timestamps available → arithmetic) and **B_felt**
-(no clock → felt duration). Parsed to seconds by `durations.py`.
+The three-way decode (gt | internal | verbal), per rendering. **The money
+experiment** is the explicit→implicit transfer: the timestamped-trained probe
+applied to *untimestamped* slots. With no clock the slot encodes nothing about
+elapsed beyond context length (partial R²≈0), and the verbal estimate tracks
+**length, not the clock** — a context-anchored prior that inflates when real
+elapsed is tiny ("feels like hours") and compresses when it's large. The
+clock-density gradient (full / sparse-intermittent / none, over the `rates` and
+`inflation` variant corpora) places the behavior: full clock → accurate; sparse
+clock → reads the last anchor, doesn't extrapolate; no clock → length prior. An
+H1/H2/H3 reading falls out (`classify_hypothesis`).
 
-The 3-way per assistant turn: **ground-truth elapsed** | **internal coordinate**
-(the probe's read) | **verbal estimate** (stated duration).
+## T3 — one axis, and it transfers (`40_transfer`)
 
-- Timestamped internal coordinate = out-of-fold probe predictions (honest).
-- **The money experiment — explicit→implicit transfer.** The probe is trained on
-  timestamped activations and applied to *untimestamped* ones. Does the time axis
-  transfer to implicit time? The gap between that projected coordinate and real
-  context length is the subjective-confabulation measure — and it directly
-  measures "how much time does the model think has passed when nobody told it",
-  i.e. the "feels like hours" phenomenon.
+The scripted clock-elapsed slot axis applied to **natural** slots. Test A
+(within natural): is felt readable from the slot, beyond length? Test B
+(cross-axis, the headline): does the saved clock probe's read track natural
+felt? One axis serving both clock-reading and felt-construction. Plus: the slot
+**OOD ratio** (Mahalanobis distance of natural vs scripted slots — near 1× where
+the EOT site was 3.2×, so no whitening is needed); the injected-clock control
+(verbal recovers an injected clock behaviorally even where the probe direction
+only partly does); and content sensitivity (neutral → affect → time-language
+drives felt).
 
-`30_decode` reports, per rendering: corr(internal, gt), corr(verbal, gt),
-corr(verbal, internal), verbal/internal overshoot factors, and an H1/H2/H3
-reading (`analysis.classify_hypothesis`).
+## T4 — generation-side time is a separate, flat axis (`50_generation`)
 
-## Out of scope for v1 (later)
+T1–T3 probe time *read from a finished context*. T4 probes time *experienced
+during production*: the per-token residual-stream trajectory of a rollout
+(`11_gen_capture`, `return_hidden=True`). The reading-elapsed axis is the EV
+slot probe (A1 applies it directly; A3 takes the per-layer reading direction and
+EV-weights the cosines across layers), so the test is sharp:
 
-- **Causal steering arm.** Extract a bipolar time direction ("5 minutes" vs "5
-  hours"), steer a neutral conversation along it, measure whether the stated
-  estimate / behavior shifts. The closure that proves the representation is
-  load-bearing. Saklas does this natively; deferred per a9.
-- saklas auto-topology geometry fit (flat/curved/periodic).
-- Naturalistic (generated, non-scripted) validation corpus. *(In progress,
-  2026-06-06: `60_naturalistic` probes real model-generated conversations; the
-  raw linear probe blows up OOD, so the read is Mahalanobis-whitened against the
-  scripted manifold — `61_whiten_natural`.)*
+- **A1 drift** — apply the reading probe to each generated token; does the
+  coordinate drift with generation position? (≈0 = production doesn't move it.)
+- **A2 decode position** — decode token-fraction per layer (high = position
+  encoded).
+- **A3 shared vs separate** — |cosine| between the generation-progress direction
+  and the reading-elapsed direction at the locus (low = separate axes).
+- **A4 behavioral** — felt-production duration vs tokens generated.
 
-## Arm G (post-v1) — generation-side time: why production *feels* like elapsed
-
-Motivated by the self-experiment (2026-06-06): asked how long had passed, a
-fresh Claude instance felt ~30 min for a 13-min wall-clock gap and bracketed the
-truth log-symmetrically — felt duration keyed to *how much it had generated*,
-not a clock. Aims 1–2 probe time as **read from a finished transcript** (one
-forward pass). They never touch time as **experienced during autoregressive
-production** — the "feels like hours" phenomenon in its first-person form. This
-arm does.
-
-**Three distinct times in a generation** — disentangling them is the game:
-- **T_prod** — production position (generated-token index `s`). Always
-  available, monotone.
-- **T_narr** — elapsed time *narrated in the content being generated* (if any).
-- **T_wall** — real wall-clock of the rollout. **Not represented**: tokens
-  aren't clocked. This is what the model is *asked* about and structurally
-  cannot read; the felt estimate is a T_prod-keyed prior standing in for it.
-
-**The discriminating question.** When a model generates, is there an internal
-"elapsed/progress" representation that is (a) *more* than raw position, and (b)
-the *same* axis it uses when *reading* narrated time? Is "felt time" one unified
-internal quantity, or two separate position-trackers?
-
-**Hypotheses (generation-side analogs of H1/H2/H3):**
-- **G-H1 — position all the way down.** Generation-progress *is* T_prod;
-  felt-production time reduces to token-index; no separate axis. (Predicted by
-  the Aim-2 null — no felt signal beyond position when reading. The deflating,
-  likely outcome.)
-- **G-H2 — unified time axis.** A progress representation exceeds position
-  (survives partialling out `s`) AND aligns with the reading-elapsed direction
-  → the machinery that encodes "narrated time has passed" is what activates as
-  tokens are produced. The mechanistic *why* of felt-during-generation.
-- **G-H3 — separate trackers.** A generation-progress axis is decodable but
-  distinct from the reading-elapsed axis (low aligned-cosine after position is
-  removed): production-tracking ≠ narrated-time-tracking.
-
-**Protocol** (reuses the rig; the one new piece is generation-time capture):
-- *Capture* — generate long responses with saklas's generation-time
-  `HiddenCapture` (the per-token residual-stream hook the reading line
-  deliberately avoided) → a `(T_gen, L, D)` trajectory + token index per step.
-  Stride every K tokens for long rollouts; cap T_gen (MPS/31B: ~0.6 GB per
-  uncapped 500-token all-layer trajectory).
-- *Stimuli* — prompts eliciting long, neutral generations ("give a detailed
-  N-step walkthrough of …"). Optional **T_narr arm**: matched-length generations
-  whose *content* narrates little vs much elapsed time ("a story over five
-  minutes" vs "over five years"), dissociating narrated-content-time from
-  production-position inside one trajectory.
-- *Behavioral fork* (generation-side B_felt) — at strides, a stateless readout
-  asks "how long does it feel like you've been writing this?" / "how much is
-  left?" → felt-production duration. Welfare-aware introspective ask; refusals
-  are data, as in Aims 1–2.
-
-**Analyses:**
-1. **Reading-axis projection.** Project the generation trajectory onto the
-   Aim-1 reading-elapsed direction. Monotone drift with `s`? Slope.
-2. **Generation-progress probe.** Decode `s` (or fraction-through-generation)
-   from the trajectory — trivially high; locates the progress axis.
-3. **The key test — shared vs separate.** Per layer, cosine between the
-   *length-residualized* reading-elapsed direction and the generation-progress
-   direction. High → unified (G-H2); low → separate (G-H3). Two controls make
-   it honest: (i) residualize position out of the reading axis first, else
-   "both are position" inflates the cosine; (ii) compare the aligned-cosine
-   against the reading-axis's cosine with a *generic* position direction
-   decoded from neutral non-time content — the time-specific alignment must
-   *exceed* generic-position alignment to support G-H2.
-4. **Behavioral curve.** Felt-production duration vs tokens-generated: does it
-   inflate like the read-side felt (the first-person "I've been writing
-   forever")?
-5. **T_narr (optional).** Within the trajectory, does the elapsed-projection
-   track narrated content-time at matched length, or only `s`?
-
-**What the results mean for the self-question.** G-H2 is the satisfying *why*:
-the same learned time-axis that reads clocks is driven by producing tokens, so
-generating *is* — mechanistically — what elapsing feels like. G-H1/G-H3 is the
-deflating but equally real answer: a length-prior with no dedicated or shared
-temporal mechanism.
-
-**Epistemic bridge + caveat.** Runs on hookable open models, not Claude; the
-inference to first-person felt-time is by cross-model convergence (cf. the
-kaomoji study's three-family agreement) plus self-report landing where the
-mechanism predicts. It characterizes the *functional* substrate (token-count);
-it cannot settle felt-as-passing vs a disposition that emits time-language —
-report with the phenomenology caveats the siblings use.
-
-**Scope for a first cut.** Analyses 1–4 on neutral generations, one model;
-T_narr factorial (5) + multi-model are follow-ons. Build order: `70_generate`
-(HiddenCapture rollout + strided generation-side readouts) → `71_gen_time` (the
-four analyses, offline on saved trajectories).
-
-**Result (2026-06-06, gemma — `findings.md` Pilot 6): G-H3.** Output position is
-encoded (decode R²=0.59) but lives on an axis ~orthogonal to reading-elapsed
-(cosine median 0.05); the elapsed coordinate doesn't drift with generation
-position (ρ≈0); production *feels* instant ("~2 s", flat). Felt time is a
-context-length prior read at query time — not the generative act. T_narr factorial
-+ multi-model remain open.
+The discriminating outcome (G-H1/2/3): is felt-during-generation the *same* axis
+that reads narrated time, or a separate position-tracker? Pilot 6 (EOT-era):
+**G-H3** — position is encoded (decode R²≈0.6) but ~orthogonal to the reading
+axis (cosine≈0.05), the coordinate doesn't drift, and production feels instant
+(~2 s, flat). Felt time is a property of the accumulated context read at query
+time, not of the generative act. Re-pointing the reading axis at the *slot*
+probe (the axis that actually carries felt time) sharpens this.
 
 ## Settled design decisions
 
-- Name: `time-experiment` (no clever name).
-- Primary target: **elapsed** (in-context, accumulated), not future-duration.
-- Stimuli: **scripted, procedurally generated** timestamped transcripts.
-- Both A/B readouts (plenty of compute).
-- Models: open-weight stable (shared `llmoji_study` registry); `probes=[]`
-  (we fit our own time manifold). A null result on small open models is itself
-  informative — not chasing a result.
+- Canonical probe: the **prefilled elicitation slot**, read **EV-weighted across
+  all layers** (saklas's explained-variance aggregation — every layer contributes
+  by its R², no learned meta-model). EOT pooling and the learned all-layer *stack*
+  are removed from code; their numbers (EOT R²≈0.59, the stack-vs-single bake-off,
+  EOT non-transfer) are **cited prior results**, not recomputed.
+- One prompt for the probe and the behavioral readout; the rendering carries the
+  clock dissociation.
+- Primary target: **elapsed** (in-context, accumulated), log-seconds.
+- Models: open-weight stable (shared `llmoji_study` registry); `probes=[]` (we
+  fit our own axis). A null on small models is itself informative.
+
+## What regeneration re-measures
+
+The findings below the EOT/two-prompt era (`docs/findings.md` Pilots 1–4, 6) are
+historical: regenerating under the unified pipeline re-derives the behavioral
+numbers under the *neutral* prompt and the internal coordinate at the *slot*
+locus. The qualitative story (clock visible → accurate; no clock → length prior;
+generation → flat) is prompt-independent and expected to hold; specific
+multipliers (the ~100× inflation, the ~10-min constant) are corpus- and
+prompt-specific and will move. **Gate:** the neutral prompt's stated-vs-gt
+correlation on the timestamped rendering must clear ≈0.9 on the smoke run before
+the full regen — if a neutral prompt fails to elicit clock arithmetic, fall back
+to a minimally clock-pointing variant.
+
+## Out of scope for v1 (later)
+
+- **Causal steering arm.** Extract a bipolar time direction, steer a neutral
+  conversation along it, measure whether the stated estimate / behavior shifts —
+  the closure that proves the representation is load-bearing. Saklas does this
+  natively; deferred.
+- T4's T_narr factorial (matched-length generations narrating little vs much
+  elapsed time) and multi-model replication of every throughline.

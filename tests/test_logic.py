@@ -15,7 +15,7 @@ from time_experiment.transcripts import (  # noqa: E402
     build_messages, generate_corpus, load_corpus, save_corpus,
 )
 from time_experiment.storage import (  # noqa: E402
-    load_transcript_states, save_transcript_states, sidecar_path,
+    load_states, save_states, sidecar_path,
 )
 
 fails = 0
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory() as d:
     check(rt[0].turns[2].text == corpus[0].turns[2].text, "corpus io round-trip text")
     check(rt[0].turns[2].elapsed_s == corpus[0].turns[2].elapsed_s, "corpus io round-trip elapsed")
 
-# --- storage round-trip ---
+# --- storage round-trip (unified sidecar keyed source/id/rendering/mode) ---
 with tempfile.TemporaryDirectory() as d:
     hidden = Path(d)
     D = 16
@@ -90,13 +90,21 @@ with tempfile.TemporaryDirectory() as d:
         for k in range(4)
     }
     elapsed = {k: float(k) for k in range(4)}
-    sp = sidecar_path(hidden, "tid__x", "timestamped")
-    save_transcript_states(sp, states=states, elapsed_by_turn=elapsed)
-    ts = load_transcript_states(sp)
+    sp = sidecar_path(hidden, "scripted", "tid__x", "timestamped", "constant")
+    save_states(sp, states=states, elapsed_by_turn=elapsed)
+    ts = load_states(sp)
     check(ts.H.shape == (4, 3, D), f"H shape (4,3,{D}) (got {ts.H.shape})")
     check(np.allclose(ts.vec(2, 5), 205.0), "vec(turn=2,layer=5) round-trips")
     check(ts.layer_stack(9).shape == (4, D), "layer_stack shape (T, D)")
+    check(ts.turn_all_layers(2).shape == (3, D), "turn_all_layers shape (L, D)")
+    check(bool(ts.has_turn(2)) and not ts.has_turn(99), "has_turn lookup")
     check(np.allclose(ts.elapsed_s, [0, 1, 2, 3]), "elapsed_s round-trips")
+
+    # natural / no-gt path: elapsed omitted -> NaN-filled (one loader for both)
+    sp_nat = sidecar_path(hidden, "natural", "conv0", "untimestamped", "constant")
+    save_states(sp_nat, states=states, elapsed_by_turn=None)
+    nat = load_states(sp_nat)
+    check(bool(np.all(np.isnan(nat.elapsed_s))), "elapsed_s is NaN when gt omitted")
 
 print(f"\n{'PASS' if fails == 0 else f'{fails} FAILURES'}")
 raise SystemExit(1 if fails else 0)

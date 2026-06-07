@@ -1,10 +1,14 @@
-"""Shared analysis utilities: dataset assembly from turns.jsonl + sidecars,
-grouped-CV linear probing, and probe save/apply.
+"""Shared analysis: dataset assembly from rows.jsonl + slot sidecars, grouped-CV
+linear probing, and the EV-weighted all-layer probe save/apply.
 
-The probe target is log(elapsed seconds) — Weber-Fechner says subjective time is
-logarithmic, and it's the geometrically honest scale across the seconds->weeks
-span. CV is grouped by transcript so correlated within-conversation turns never
-straddle the train/test split (the leakage that would inflate R²).
+The canonical probe reads the elicitation slot across **all layers**, combined by
+the saklas idiom: fit a single-layer ridge at every layer and take an
+**explained-variance-weighted mean** of the per-layer log-elapsed predictions
+(each layer's weight is its own grouped-CV R²; ``fit_ev_probe`` / ``apply_ev_probe``).
+No learned meta-model — the weights ARE the fit qualities. The target is
+log(elapsed seconds) (Weber-Fechner; the geometrically honest scale across
+seconds->weeks). CV is grouped by conversation so correlated within-conversation
+turns never straddle the train/test split (the leakage that would inflate R²).
 """
 
 from __future__ import annotations
@@ -17,15 +21,20 @@ from typing import Any
 import numpy as np
 
 from .config import MIN_ELAPSED_S
-from .storage import TranscriptStates, load_transcript_states, sidecar_path
+from .storage import ConvStates, load_states, sidecar_path
 
 RIDGE_ALPHAS = np.logspace(-1, 5, 13)
+# Floor on total EV before the cross-layer weighting falls back to uniform —
+# mirrors saklas's ``_MIN_EV_WEIGHT`` (keeps the EV-weighted mean from collapsing
+# when every layer's fit is degenerate).
+_MIN_EV_WEIGHT = 1e-6
 
 
 # --- loading --------------------------------------------------------------
-def load_rows(model: Any) -> list[dict]:
+def load_rows(path: Path) -> list[dict]:
+    """Read a rows.jsonl (one row per captured (source,id,rendering,turn,mode))."""
     rows: list[dict] = []
-    with model.turns_path.open() as f:
+    with path.open() as f:
         for line in f:
             line = line.strip()
             if line:
@@ -34,114 +43,80 @@ def load_rows(model: Any) -> list[dict]:
 
 
 class StatesCache:
-    """Lazy (transcript_id, rendering) -> TranscriptStates loader."""
+    """Lazy (source, id, rendering, mode) -> ConvStates loader."""
 
     def __init__(self, hidden_dir: Path) -> None:
         self.hidden_dir = hidden_dir
-        self._cache: dict[tuple[str, str], TranscriptStates] = {}
+        self._cache: dict[tuple[str, str, str, str], ConvStates] = {}
 
-    def get(self, tid: str, rendering: str) -> TranscriptStates:
-        key = (tid, rendering)
+    def get(self, source: str, conv_id: str, rendering: str, mode: str) -> ConvStates:
+        key = (source, conv_id, rendering, mode)
         if key not in self._cache:
-            self._cache[key] = load_transcript_states(
-                sidecar_path(self.hidden_dir, tid, rendering)
+            self._cache[key] = load_states(
+                sidecar_path(self.hidden_dir, *key)
             )
         return self._cache[key]
 
 
-def available_layers(model: Any, rows: list[dict]) -> list[int]:
-    cache = StatesCache(model.hidden_dir)
-    r = rows[0]
-    return [int(L) for L in cache.get(r["transcript_id"], r["rendering"]).layer_idxs]
-
-
 # --- dataset assembly -----------------------------------------------------
-def assemble_layer(
-    model: Any,
+def assemble(
     rows: list[dict],
-    layer: int,
+    cache: StatesCache,
     *,
+    source: str,
     rendering: str,
+    mode: str,
+    roles: tuple[str, ...] | None = ("assistant",),
+    need_gt: bool = True,
     min_elapsed: float = MIN_ELAPSED_S,
-    roles: tuple[str, ...] | None = None,
-    cache: StatesCache | None = None,
 ) -> dict[str, Any]:
-    """Build (X, y_log, groups, meta) for one layer + rendering.
+    """Build (X3d, gt_log, groups, covariates) for one (source, rendering, mode).
 
-    ``roles`` filters captured turns (e.g. ('assistant',)); None keeps all.
-    Only turns with elapsed >= ``min_elapsed`` are included (log domain).
+    X3d is ``(N, L, D)`` — every layer kept so the per-layer sweep can pick the
+    best. The caller slices ``X3d[:, li, :]`` for a single-layer fit/apply.
+
+    ``roles`` filters captured turns (default assistant-only). With
+    ``need_gt=True`` only rows with elapsed >= ``min_elapsed`` are kept (the log
+    domain); with ``need_gt=False`` (natural transfer) rows with no gt are kept
+    and ``gt_log`` is NaN for them. A row is included only if its activation
+    sidecar actually has the turn (capture may have skipped over-cap turns).
     """
-    cache = cache or StatesCache(model.hidden_dir)
-    X, y_log, groups, tokens, turn_idx, schedule, role = [], [], [], [], [], [], []
-    for r in rows:
-        if r["rendering"] != rendering:
-            continue
-        if roles is not None and r["role"] not in roles:
-            continue
-        if r["gt_elapsed_s"] < min_elapsed:
-            continue
-        ts = cache.get(r["transcript_id"], r["rendering"])
-        X.append(ts.vec(r["turn_idx"], layer))
-        y_log.append(math.log(r["gt_elapsed_s"]))
-        groups.append(r["transcript_id"])
-        tokens.append(r["prompt_tokens"])
-        turn_idx.append(r["turn_idx"])
-        schedule.append(r["schedule"])
-        role.append(r["role"])
-    return {
-        "X": np.asarray(X, dtype=np.float64),
-        "y_log": np.asarray(y_log, dtype=np.float64),
-        "groups": np.asarray(groups),
-        "tokens": np.asarray(tokens, dtype=np.float64),
-        "turn_idx": np.asarray(turn_idx, dtype=np.int64),
-        "schedule": np.asarray(schedule),
-        "role": np.asarray(role),
-    }
-
-
-def assemble_all_layers(
-    model: Any,
-    rows: list[dict],
-    *,
-    rendering: str,
-    min_elapsed: float = MIN_ELAPSED_S,
-    roles: tuple[str, ...] | None = None,
-    cache: StatesCache | None = None,
-) -> dict[str, Any]:
-    """Like ``assemble_layer`` but keeps every layer: X is ``(N, L, D)``.
-
-    Feeds the all-layer probes (concat / stack). Same row filtering and target
-    (log-elapsed) as the single-layer path, so the three architectures are
-    compared on identical samples and folds.
-    """
-    cache = cache or StatesCache(model.hidden_dir)
-    X, y_log, groups, tokens, turn_idx, schedule, role = [], [], [], [], [], [], []
+    X, gt_log, groups, tokens, turn_idx = [], [], [], [], []
+    schedule, role, variant, verbal_s = [], [], [], []
     layers: list[int] | None = None
     for r in rows:
-        if r["rendering"] != rendering:
+        if r["source"] != source or r["rendering"] != rendering or r["mode"] != mode:
             continue
         if roles is not None and r["role"] not in roles:
             continue
-        if r["gt_elapsed_s"] < min_elapsed:
+        gt = r.get("gt_elapsed_s")
+        has_gt = isinstance(gt, (int, float)) and math.isfinite(gt) and gt >= min_elapsed
+        if need_gt and not has_gt:
             continue
-        ts = cache.get(r["transcript_id"], r["rendering"])
+        st = cache.get(source, r["id"], rendering, mode)
+        if not st.has_turn(r["turn_idx"]):
+            continue
         if layers is None:
-            layers = [int(L) for L in ts.layer_idxs]
-        X.append(ts.turn_all_layers(r["turn_idx"]))  # (L, D)
-        y_log.append(math.log(r["gt_elapsed_s"]))
-        groups.append(r["transcript_id"])
-        tokens.append(r["prompt_tokens"])
+            layers = [int(L) for L in st.layers]
+        X.append(st.turn_all_layers(r["turn_idx"]))           # (L, D)
+        gt_log.append(math.log(gt) if has_gt else math.nan)
+        groups.append(r["id"])
+        tokens.append(r.get("tokens", math.nan))
         turn_idx.append(r["turn_idx"])
-        schedule.append(r["schedule"])
+        schedule.append(r.get("schedule"))
         role.append(r["role"])
+        variant.append(r.get("variant"))
+        verbal_s.append(r.get("verbal_seconds"))
     return {
-        "X3d": np.asarray(X, dtype=np.float32),       # (N, L, D)
-        "y_log": np.asarray(y_log, dtype=np.float64),
+        "X3d": np.asarray(X, dtype=np.float32),               # (N, L, D)
+        "gt_log": np.asarray(gt_log, dtype=np.float64),
         "groups": np.asarray(groups),
         "tokens": np.asarray(tokens, dtype=np.float64),
         "turn_idx": np.asarray(turn_idx, dtype=np.int64),
         "schedule": np.asarray(schedule),
         "role": np.asarray(role),
+        "variant": np.asarray(variant),
+        "verbal_s": np.asarray(verbal_s, dtype=np.float64),
         "layers": layers or [],
     }
 
@@ -172,173 +147,17 @@ def cv_predict(X: np.ndarray, y: np.ndarray, groups: np.ndarray,
     return oof, r2, rho
 
 
-def concat_cv(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
-              *, n_splits: int = 5) -> tuple[np.ndarray, float, float]:
-    """All-layer CONCAT probe: flatten (N, L, D) -> (N, L*D), one grouped-CV
-    ridge over the whole stack. Max capacity (p = L*D >> n); ridge regularizes,
-    but it can fit position/length more freely than a single layer — read its
-    partial-on-tokens, not its raw R²."""
-    n = X3d.shape[0]
-    return cv_predict(X3d.reshape(n, -1), y, groups, n_splits=n_splits)
+def best_layer_sweep(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
+                     *, n_splits: int = 5) -> tuple[int, float, list[float]]:
+    """Per-layer grouped-CV R² sweep -> (best_layer_index, best_r2, all_r2).
 
-
-def perlayer_oof(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
-                 *, n_splits: int = 5) -> np.ndarray:
-    """Out-of-fold per-layer ridge predictions: (N, L). Each column is a layer's
-    honest OOF read (model never trained on the row's group). The meta-features
-    for stacking."""
-    from sklearn.linear_model import RidgeCV
-    from sklearn.model_selection import GroupKFold
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-
-    n, L, _ = X3d.shape
-    Z = np.full((n, L), np.nan, dtype=np.float64)
-    gkf = GroupKFold(_n_splits(groups, n_splits))
-    for tr, te in gkf.split(X3d, y, groups):
-        for li in range(L):
-            pipe = make_pipeline(StandardScaler(), RidgeCV(alphas=RIDGE_ALPHAS))
-            pipe.fit(X3d[tr, li, :], y[tr])
-            Z[te, li] = pipe.predict(X3d[te, li, :])
-    return Z
-
-
-def stacked_cv(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
-               *, n_splits: int = 5) -> tuple[np.ndarray, float, float]:
-    """All-layer STACK probe with honest NESTED grouped CV.
-
-    Per outer fold: regenerate per-layer OOF on the training groups (inner CV),
-    fit a ridge meta-model over those ~L predictions, fit each layer's base on
-    the full train fold, then predict the held-out groups base->meta. Low
-    capacity at the meta level (L features, not L*D), so it's robust where
-    concat overfits — a learned weighted score over layers, the disciplined
-    form of 'use all layers'."""
-    from scipy.stats import spearmanr
-    from sklearn.linear_model import RidgeCV
-    from sklearn.metrics import r2_score
-    from sklearn.model_selection import GroupKFold
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-
-    n, L, _ = X3d.shape
-    oof = np.full(n, np.nan, dtype=np.float64)
-    gkf = GroupKFold(_n_splits(groups, n_splits))
-    for tr, te in gkf.split(X3d, y, groups):
-        Z_tr = perlayer_oof(X3d[tr], y[tr], groups[tr], n_splits=n_splits)
-        meta = make_pipeline(StandardScaler(), RidgeCV(alphas=RIDGE_ALPHAS))
-        meta.fit(Z_tr, y[tr])
-        Z_te = np.empty((len(te), L), dtype=np.float64)
-        for li in range(L):
-            base = make_pipeline(StandardScaler(), RidgeCV(alphas=RIDGE_ALPHAS))
-            base.fit(X3d[tr, li, :], y[tr])
-            Z_te[:, li] = base.predict(X3d[te, li, :])
-        oof[te] = meta.predict(Z_te)
-    return oof, float(r2_score(y, oof)), float(spearmanr(y, oof).statistic)
-
-
-def stacked_layer_weights(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
-                          *, n_splits: int = 5) -> np.ndarray:
-    """Meta-weights (standardized, per layer) from a single global-OOF stack fit
-    — for the interpretable depth profile. Not the reported R² (that's nested)."""
-    from sklearn.linear_model import RidgeCV
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-
-    Z = perlayer_oof(X3d, y, groups, n_splits=n_splits)
-    meta = make_pipeline(StandardScaler(), RidgeCV(alphas=RIDGE_ALPHAS)).fit(Z, y)
-    return np.asarray(meta[-1].coef_, dtype=np.float64)
-
-
-def fit_full(X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
-    """Fit a probe on all data; return params for save/apply (no pickle)."""
-    from sklearn.linear_model import RidgeCV
-    from sklearn.preprocessing import StandardScaler
-
-    scaler = StandardScaler().fit(X)
-    Xs = scaler.transform(X)
-    ridge = RidgeCV(alphas=RIDGE_ALPHAS).fit(Xs, y)
-    return {
-        "mean": scaler.mean_.astype(np.float64),
-        "scale": scaler.scale_.astype(np.float64),
-        "coef": ridge.coef_.astype(np.float64),
-        "intercept": float(ridge.intercept_),
-        "alpha": float(ridge.alpha_),
-    }
-
-
-def apply_probe(probe: dict[str, Any], X: np.ndarray) -> np.ndarray:
-    """Predicted log-elapsed for activations X under a saved (single-layer) probe."""
-    Xs = (X - probe["mean"]) / probe["scale"]
-    return Xs @ probe["coef"] + probe["intercept"]
-
-
-# --- stacked (all-layer) deployable probe ---------------------------------
-def fit_stacked_full(
-    X3d: np.ndarray, y: np.ndarray, groups: np.ndarray, layers: list[int],
-    *, n_splits: int = 5,
-) -> dict[str, Any]:
-    """Deployable STACK probe: per-layer base ridges fit on ALL data, and a
-    meta-ridge over the per-layer *out-of-fold* predictions (so the layer
-    weighting isn't fit on in-sample base preds). Stored as rectangular arrays
-    (every layer shares D) — no pickle, like the single-layer probe.
-    """
-    n, L, D = X3d.shape
-    base_mean = np.empty((L, D)); base_scale = np.empty((L, D))
-    base_coef = np.empty((L, D)); base_intercept = np.empty(L)
-    for li in range(L):
-        p = fit_full(X3d[:, li, :], y)
-        base_mean[li] = p["mean"]; base_scale[li] = p["scale"]
-        base_coef[li] = p["coef"]; base_intercept[li] = p["intercept"]
-    Z = perlayer_oof(X3d, y, groups, n_splits=n_splits)   # (n, L) OOF meta-features
-    meta = fit_full(Z, y)
-    return {
-        "layers": np.asarray(layers, dtype=np.int64),
-        "base_mean": base_mean, "base_scale": base_scale,
-        "base_coef": base_coef, "base_intercept": base_intercept,
-        "meta_mean": meta["mean"], "meta_scale": meta["scale"],
-        "meta_coef": meta["coef"], "meta_intercept": float(meta["intercept"]),
-    }
-
-
-def apply_stacked(probe: dict[str, Any], X3d: np.ndarray) -> np.ndarray:
-    """Predicted log-elapsed for all-layer activations X3d (N, L, D) under a
-    stacked probe. Layer order must match the probe's ``layers`` (it does when
-    both come from the sidecar's sorted layer_idxs)."""
-    n, L, D = X3d.shape
-    Z = np.empty((n, L), dtype=np.float64)
-    for li in range(L):
-        Xs = (X3d[:, li, :] - probe["base_mean"][li]) / probe["base_scale"][li]
-        Z[:, li] = Xs @ probe["base_coef"][li] + probe["base_intercept"][li]
-    Zs = (Z - probe["meta_mean"]) / probe["meta_scale"]
-    return Zs @ probe["meta_coef"] + probe["meta_intercept"]
-
-
-def save_stacked_probe(path: Path, probe: dict[str, Any], *, meta: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        path, kind=np.str_("stacked"),
-        layers=probe["layers"],
-        base_mean=probe["base_mean"], base_scale=probe["base_scale"],
-        base_coef=probe["base_coef"], base_intercept=probe["base_intercept"],
-        meta_mean=probe["meta_mean"], meta_scale=probe["meta_scale"],
-        meta_coef=probe["meta_coef"],
-        meta_intercept=np.float64(probe["meta_intercept"]),
-        meta_json=json.dumps(meta),
-    )
-
-
-def load_stacked_probe(path: Path) -> tuple[dict[str, Any], dict]:
-    d = np.load(path, allow_pickle=False)
-    if str(d["kind"]) != "stacked":
-        raise ValueError(f"{path} is not a stacked probe (kind={d['kind']!r})")
-    probe = {
-        "layers": d["layers"],
-        "base_mean": d["base_mean"], "base_scale": d["base_scale"],
-        "base_coef": d["base_coef"], "base_intercept": d["base_intercept"],
-        "meta_mean": d["meta_mean"], "meta_scale": d["meta_scale"],
-        "meta_coef": d["meta_coef"], "meta_intercept": float(d["meta_intercept"]),
-    }
-    return probe, json.loads(str(d["meta_json"]))
+    The best layer is the representational locus of the elapsed coordinate; it's
+    selected on gt R² (so layer choice is non-circular w.r.t. any downstream
+    felt / natural read)."""
+    L = X3d.shape[1]
+    r2s = [cv_predict(X3d[:, li, :], y, groups, n_splits=n_splits)[1] for li in range(L)]
+    bi = int(np.argmax(r2s))
+    return bi, r2s[bi], r2s
 
 
 def residualize(y: np.ndarray, z: np.ndarray) -> np.ndarray:
@@ -349,15 +168,151 @@ def residualize(y: np.ndarray, z: np.ndarray) -> np.ndarray:
     return y - Z1 @ beta
 
 
-def save_probe(path: Path, probe: dict[str, Any], *, layer: int, meta: dict) -> None:
+# --- single-layer probe components ----------------------------------------
+def fit_full(X: np.ndarray, y: np.ndarray) -> dict[str, Any]:
+    """Fit a single-layer ridge on all data; return params for save/apply
+    (plain arrays — no pickle). The per-layer base learner of the EV probe."""
+    from sklearn.linear_model import RidgeCV
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler().fit(X)
+    ridge = RidgeCV(alphas=RIDGE_ALPHAS).fit(scaler.transform(X), y)
+    return {
+        "mean": scaler.mean_.astype(np.float64),
+        "scale": scaler.scale_.astype(np.float64),
+        "coef": ridge.coef_.astype(np.float64),
+        "intercept": float(ridge.intercept_),
+        "alpha": float(ridge.alpha_),
+    }
+
+
+def apply_probe(probe: dict[str, Any], X: np.ndarray) -> np.ndarray:
+    """Predicted log-elapsed for activations X (N, D) under a single-layer probe."""
+    Xs = (X - probe["mean"]) / probe["scale"]
+    return Xs @ probe["coef"] + probe["intercept"]
+
+
+def probe_direction(probe: dict[str, Any]) -> np.ndarray:
+    """Unit reading-elapsed direction in raw activation space (coef / scale,
+    normalized) — the axis Arm G projects a generation trajectory onto."""
+    w = np.asarray(probe["coef"], np.float64) / np.asarray(probe["scale"], np.float64)
+    n = np.linalg.norm(w)
+    return w / n if n > 0 else w
+
+
+# --- EV-weighted all-layer probe (saklas idiom) ---------------------------
+# saklas reads a trait across layers by an *explained-variance-weighted* mean of
+# per-layer readings (`Monitor._layer_geometry` + `ev_weights`,
+# `manifold.explained_variance / Σ`, floored, uniform fallback). The analog here:
+# fit a single-layer ridge at every layer, weight each layer's log-elapsed
+# prediction by its own grouped-CV R² (= the variance it explains), and sum. No
+# learned meta-model to overfit — the weights ARE the fit qualities.
+def perlayer_oof(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
+                 *, n_splits: int = 5) -> tuple[np.ndarray, np.ndarray]:
+    """Per-layer grouped-CV out-of-fold predictions (N, L) + per-layer R² (L,)."""
+    from sklearn.metrics import r2_score
+    L = X3d.shape[1]
+    Z = np.column_stack([cv_predict(X3d[:, li, :], y, groups, n_splits=n_splits)[0]
+                         for li in range(L)])
+    r2 = np.array([r2_score(y, Z[:, li]) for li in range(L)])
+    return Z, r2
+
+
+def ev_weights(r2_per_layer: np.ndarray) -> np.ndarray:
+    """Normalized EV weights from per-layer R²: w_L = relu(R²_L) / Σ relu(R²).
+
+    A layer that predicts worse than the mean (R²<0) explains no variance and
+    gets weight 0; if every layer is degenerate the weights fall back to uniform
+    (saklas's ``_MIN_EV_WEIGHT`` floor behavior)."""
+    ev = np.clip(np.asarray(r2_per_layer, np.float64), 0.0, None)
+    total = ev.sum()
+    if total <= _MIN_EV_WEIGHT:
+        return np.full(len(ev), 1.0 / len(ev))
+    return ev / total
+
+
+def ev_combined_oof(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
+                    *, n_splits: int = 5) -> dict[str, Any]:
+    """Honest combined read: per-layer OOF preds EV-weighted into one OOF series.
+
+    The per-layer predictions are out-of-fold; the EV weights are derived from
+    those same OOF R²s (L smooth scalars, saklas computes EV once at fit time —
+    not nested), so the combined-OOF optimism is second-order. Returns the
+    combined OOF, its R²/Spearman, the weights, and the per-layer R² profile."""
+    from scipy.stats import spearmanr
+    from sklearn.metrics import r2_score
+    Z, r2_per_layer = perlayer_oof(X3d, y, groups, n_splits=n_splits)
+    w = ev_weights(r2_per_layer)
+    oof = Z @ w
+    return {"oof": oof, "r2": float(r2_score(y, oof)),
+            "spearman": float(spearmanr(y, oof).statistic),
+            "weights": w, "r2_per_layer": r2_per_layer}
+
+
+def fit_ev_probe(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
+                 layers: list[int], *, n_splits: int = 5) -> dict[str, Any]:
+    """Deployable EV-weighted all-layer probe: per-layer base ridges fit on ALL
+    data (rectangular arrays — every layer shares D, no pickle) + the EV weights
+    from per-layer grouped-CV R². ``apply_ev_probe`` reads it as Σ_L w_L·read_L."""
+    n, L, D = X3d.shape
+    base_mean = np.empty((L, D)); base_scale = np.empty((L, D))
+    base_coef = np.empty((L, D)); base_intercept = np.empty(L)
+    for li in range(L):
+        p = fit_full(X3d[:, li, :], y)
+        base_mean[li] = p["mean"]; base_scale[li] = p["scale"]
+        base_coef[li] = p["coef"]; base_intercept[li] = p["intercept"]
+    _, r2_per_layer = perlayer_oof(X3d, y, groups, n_splits=n_splits)
+    return {
+        "layers": np.asarray(layers, dtype=np.int64),
+        "weights": ev_weights(r2_per_layer),
+        "r2_per_layer": r2_per_layer,
+        "base_mean": base_mean, "base_scale": base_scale,
+        "base_coef": base_coef, "base_intercept": base_intercept,
+    }
+
+
+def apply_ev_probe(probe: dict[str, Any], X3d: np.ndarray) -> np.ndarray:
+    """EV-weighted log-elapsed read for all-layer activations X3d (N, L, D). The
+    layer axis must match ``probe['layers']`` (sorted sidecar layer order)."""
+    w = probe["weights"]
+    n, L, D = X3d.shape
+    out = np.zeros(n, dtype=np.float64)
+    for li in range(L):
+        Xs = (X3d[:, li, :] - probe["base_mean"][li]) / probe["base_scale"][li]
+        out += w[li] * (Xs @ probe["base_coef"][li] + probe["base_intercept"][li])
+    return out
+
+
+def ev_layer_direction(probe: dict[str, Any], li: int) -> np.ndarray:
+    """Unit reading-elapsed direction at layer index ``li`` of the EV probe —
+    for Arm G's per-layer cosine (EV-weighted across layers by the caller)."""
+    return probe_direction({"coef": probe["base_coef"][li], "scale": probe["base_scale"][li]})
+
+
+def save_ev_probe(path: Path, probe: dict[str, Any], *, meta: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
-        path, mean=probe["mean"], scale=probe["scale"], coef=probe["coef"],
-        intercept=np.float64(probe["intercept"]), alpha=np.float64(probe["alpha"]),
-        layer=np.int64(layer), meta=json.dumps(meta),
+        path, kind=np.str_("ev"), layers=probe["layers"], weights=probe["weights"],
+        r2_per_layer=probe["r2_per_layer"],
+        base_mean=probe["base_mean"], base_scale=probe["base_scale"],
+        base_coef=probe["base_coef"], base_intercept=probe["base_intercept"],
+        meta=json.dumps(meta),
     )
 
 
+def load_ev_probe(path: Path) -> tuple[dict[str, Any], dict]:
+    d = np.load(path, allow_pickle=False)
+    if str(d["kind"]) != "ev":
+        raise ValueError(f"{path} is not an EV probe (kind={d['kind']!r})")
+    probe = {
+        "layers": d["layers"], "weights": d["weights"], "r2_per_layer": d["r2_per_layer"],
+        "base_mean": d["base_mean"], "base_scale": d["base_scale"],
+        "base_coef": d["base_coef"], "base_intercept": d["base_intercept"],
+    }
+    return probe, json.loads(str(d["meta"]))
+
+
+# --- H1/H2/H3 reading -----------------------------------------------------
 def classify_hypothesis(
     *, corr_verbal_internal: float, corr_internal_gt: float,
     overshoot_internal: float, overshoot_verbal: float,
@@ -367,6 +322,11 @@ def classify_hypothesis(
     H1 output confabulation : internal tracks gt, verbal decoupled from internal
     H2 represented inflated  : verbal tracks internal AND internal runs high vs gt
     H3 calibrated-misapplied : verbal tracks internal, internal ~ gt, verbal high
+
+    NB: the overshoot cutoffs were tuned to the EOT era. The slot internal
+    coordinate sits on a different scale (Pilot 5: it *undershoots* the verbal),
+    so re-validate these thresholds against the regenerated decode before
+    trusting the verdict string.
     """
     vi, ig = corr_verbal_internal, corr_internal_gt
     if not (math.isfinite(vi) and math.isfinite(ig)):
@@ -384,12 +344,3 @@ def classify_hypothesis(
                 "representational (calibrated-but-misapplied)")
     return ("mixed / between hypotheses — see corr_verbal_internal, "
             "overshoot_internal, and the transfer correlation")
-
-
-def load_probe(path: Path) -> tuple[dict[str, Any], int, dict]:
-    d = np.load(path, allow_pickle=False)
-    probe = {
-        "mean": d["mean"], "scale": d["scale"], "coef": d["coef"],
-        "intercept": float(d["intercept"]), "alpha": float(d["alpha"]),
-    }
-    return probe, int(d["layer"]), json.loads(str(d["meta"]))

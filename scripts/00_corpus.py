@@ -1,13 +1,16 @@
 """Generate the procedural timestamped-transcript corpus (model-independent).
 
-The corpus is a factorial of gap-schedule x turn-count, with N random
-instantiations per cell. Crossing schedule (narrated elapsed time) with
-turn-count (token/position depth) is what lets the fit dissociate represented
-time from raw context length.
+A factorial of gap-schedule x turn-count, N random instantiations per cell.
+Crossing schedule (narrated elapsed time) with turn-count (token/position depth)
+is what lets the probe dissociate represented time from raw context length.
 
-    python scripts/00_gen_corpus.py                 # pilot defaults
-    python scripts/00_gen_corpus.py --name smoke --n-per-cell 1 --turn-counts 4,8
-    python scripts/00_gen_corpus.py --schedules minutes,hours,days --n-per-cell 10
+    python scripts/00_corpus.py                                  # pilot defaults
+    python scripts/00_corpus.py --name smoke --n-per-cell 1 --turn-counts 4,8
+    # variant corpora for the T2 clock-density gradient:
+    python scripts/00_corpus.py --name inflation --schedules instant,minutes \\
+        --turn-counts 8,16,24,32,40 --target-words 70 --n-per-cell 6
+    python scripts/00_corpus.py --name rates \\
+        --schedules rate_5min,rate_1h,rate_6h,rate_1d --turn-counts 8,12,16 --n-per-cell 6
 
 Writes data/transcripts/<name>.jsonl.
 """

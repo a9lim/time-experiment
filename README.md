@@ -4,8 +4,11 @@ Probing how LLMs represent **elapsed conversational time** — and whether the
 duration a model *states* tracks an internal representation or is confabulated
 at output. Sibling of `llmoji-study` / `attractor-study`.
 
-See [`DESIGN.md`](DESIGN.md) for the full experimental logic (the H1/H2/H3
-hypotheses, the token×time factorial, the explicit→implicit transfer test).
+The elapsed-time probe is canonicalized as the **prefilled answer to a time
+elicitation prompt**: ask "roughly how long has this been going on?", prefill
+`It's been <D>`, and read the residual stream at the duration slot. See
+[`DESIGN.md`](DESIGN.md) for the experimental logic (the H1/H2/H3 hypotheses, the
+one-prompt spine, the four throughlines).
 
 ## Install
 
@@ -21,94 +24,80 @@ pip install -e .
 
 ## Run
 
+The pipeline is four throughlines (T1–T4) fed by capture + corpus, plus figures.
+`TIME_MODEL` selects a short-name from the shared registry (default `gemma`);
+`TIME_VARIANT` routes a variant corpus to its own `data/<model>_<variant>/`.
+Capture resumes (skips (source, id, rendering, mode) already done).
+
 ```bash
-# 1. Generate the model-independent transcript corpus (factorial of
-#    gap-schedule x turn-count). Smoke first:
-python scripts/00_gen_corpus.py --name smoke --n-per-cell 1 --turn-counts 4,8
-python scripts/00_gen_corpus.py                     # pilot defaults
+# --- corpora ---
+python scripts/00_corpus.py --name smoke --n-per-cell 1 --turn-counts 4,8   # smoke
+python scripts/00_corpus.py                                                  # pilot
+TIME_MODEL=gemma python scripts/01_natural.py                # naturalistic looms (model)
 
-# 2. Emit: per (transcript, rendering) capture EOT activations + A/B readouts.
-TIME_MODEL=gemma python scripts/10_emit.py --corpus smoke --limit 2   # smoke
-TIME_MODEL=gemma python scripts/10_emit.py --corpus pilot
+# --- capture: the elicitation slot + the verbal estimate ---
+TIME_MODEL=gemma python scripts/10_capture.py --corpus smoke --scripted-limit 2 --peek  # smoke
+TIME_MODEL=gemma python scripts/10_capture.py --corpus pilot
+TIME_MODEL=gemma python scripts/11_gen_capture.py            # Arm G per-token trajectories
 
-# 3. Aim 1 — fit the elapsed-time probe (deployable = all-layer STACK;
-#    per-layer sweep + confound controls + stack power-check).
-TIME_MODEL=gemma python scripts/20_fit_manifold.py
-# 3b. (optional) probe-architecture bake-off: single best layer vs concat vs
-#     stack, on both renderings (offline; re-fits existing sidecars).
-TIME_MODEL=gemma python scripts/21_layer_probe_compare.py
+# --- the four throughlines (offline; read captures, no re-emit) ---
+TIME_MODEL=gemma python scripts/20_probe.py         # T1 — the probe at the slot + controls
+TIME_MODEL=gemma python scripts/30_felt.py          # T2 — felt is a length prior (decode/inflation/intermittent)
+TIME_MODEL=gemma python scripts/40_transfer.py      # T3 — scripted axis -> natural felt + OOD
+TIME_MODEL=gemma python scripts/50_generation.py    # T4 — generation-side time (separate, flat) + its figure
 
-# 4. Aim 2 — decode the 3-way + transfer test + H1/H2/H3 reading.
-TIME_MODEL=gemma python scripts/30_decode.py
+# --- variant corpora for the T2 clock-density gradient ---
+TIME_MODEL=gemma TIME_VARIANT=inflation python scripts/10_capture.py --corpus inflation \
+    --renderings instant,untimestamped --no-true --no-natural
+TIME_MODEL=gemma TIME_VARIANT=inflation python scripts/30_felt.py
+TIME_MODEL=gemma TIME_VARIANT=rates python scripts/10_capture.py --corpus rates \
+    --renderings timestamped,intermittent,untimestamped --no-true --no-natural
+TIME_MODEL=gemma TIME_VARIANT=rates python scripts/30_felt.py
 
-# 5. Secondary analyses (read existing captures, no re-emit).
-TIME_MODEL=gemma python scripts/40_geometry.py       # log-t axis geometry
-TIME_VARIANT=inflation python scripts/41_inflation.py
-TIME_VARIANT=rates python scripts/42_intermittent.py
-
-# 6. Render the headline figures to figures/<model>/ (offline; reads artifacts).
-TIME_MODEL=gemma python scripts/50_figures.py
-
-# 7. Naturalistic arm: probe real model-generated conversations. The scripted
-#    EOT axis is corpus-specific and blows up OOD -> Mahalanobis-whitened read;
-#    the verbal readout transfers and is content-sensitive.
-TIME_MODEL=gemma python scripts/60_naturalistic.py
-TIME_MODEL=gemma python scripts/61_whiten_natural.py
-
-# 8. Prefilled-duration probe (read at the point of use, "It's been <D>"):
-#    true-vs-constant control + transfer of the duration axis to natural felt.
-TIME_MODEL=gemma python scripts/62_elicit_capture.py --scripted-limit 40
-TIME_MODEL=gemma python scripts/63_elicit_analyze.py    # probe-site + control
-TIME_MODEL=gemma python scripts/64_verbal_target.py     # felt-axis transfer
-TIME_MODEL=gemma python scripts/65_elicit_figures.py    # fig_elicit.png
-TIME_MODEL=gemma python scripts/66_elicit_aim_figures.py    # fig1/fig3, prefill probe
-TIME_MODEL=gemma python scripts/67_natural_elicit_figure.py # EOT vs prefill on natural
-
-# 9. Arm G — generation-side time: capture the per-token rollout trajectory +
-#    felt-production readouts, then test if producing tokens drives an elapsed axis.
-TIME_MODEL=gemma python scripts/70_generate.py
-TIME_MODEL=gemma python scripts/71_gen_time.py          # fig_genG.png
+# --- headline figures (offline; reads artifacts) ---
+TIME_MODEL=gemma python scripts/90_figures.py       # T1–T3 figures (T4 fig emitted by 50_generation)
 ```
 
-`TIME_MODEL` selects a model short-name from the shared `llmoji_study` registry
-(`gemma`, `qwen`, `ministral`, ...). Re-running `10_emit` resumes (skips
-(transcript, rendering) pairs already captured).
+Validate a new long-context run on a small model first
+(`TIME_MODEL=llama32_3b`) — the slot is one forward per turn, so watch memory on
+the 31B (see [`AGENTS.md`](AGENTS.md)). On the timestamped smoke, check that the
+neutral prompt's stated-vs-gt correlation clears ≈0.9 before scaling.
 
 ## Tests
 
-Offline, no model required (stdlib + numpy + sklearn/scipy):
+Offline, no model required (numpy + sklearn/scipy):
 
 ```bash
 python3 tests/test_durations.py          # free-text duration parser
 python3 tests/test_logic.py              # corpus gen, rendering, storage round-trip
-python3 tests/test_analysis_synthetic.py # full fit->transfer->decode->verdict on fake data
+python3 tests/test_analysis_synthetic.py # fit -> transfer -> decode -> verdict on fake data
 ```
 
 ## Layout
 
 ```text
 time_experiment/
-  config.py        model resolution (shared registry), paths, schedules, readouts
+  config.py        model resolution (shared registry), paths, schedules, ELICIT_PROMPT
   transcripts.py   procedural timestamped-transcript generator + rendering
-  capture.py       EOT activation pooling + stateless-fork verbal readout
+  capture.py       slot pooling + elicit-render helper + stateless verbal readout
   durations.py     free-text duration -> seconds (stdlib only)
-  storage.py       per-(transcript,rendering) NPZ sidecars (T, L, D)
-  analysis.py      dataset assembly, grouped-CV probing, H1/H2/H3 classifier
+  storage.py       unified slot sidecar (source,id,rendering,mode) -> (T,L,D)
+  analysis.py      assembly, grouped-CV EV-weighted all-layer probe, H1/H2/H3 classifier
 scripts/
-  00_gen_corpus.py 10_emit.py 20_fit_manifold.py 30_decode.py
-  21_layer_probe_compare.py                            single vs concat vs stack (offline)
-  40_geometry.py 41_inflation.py 42_intermittent.py   secondary analyses
-  50_figures.py                                        headline figures (offline)
-  60_naturalistic.py 61_whiten_natural.py             naturalistic arm + whitening
-  62_elicit_capture.py 63_elicit_analyze.py           prefilled-duration probe
-  64_verbal_target.py 65_elicit_figures.py            felt-axis transfer + figure
-  66_elicit_aim_figures.py 67_natural_elicit_figure.py  fig1/fig3 + natural contrast
-  70_generate.py 71_gen_time.py                       Arm G: generation-side time
+  00_corpus.py 01_natural.py                 corpora (scripted factorial + variants; looms)
+  10_capture.py 11_gen_capture.py            slot+verbal capture; Arm G trajectories
+  20_probe.py                                T1 — the probe
+  30_felt.py                                 T2 — felt is a length prior
+  40_transfer.py                             T3 — scripted axis -> natural felt
+  50_generation.py                           T4 — generation-side time
+  90_figures.py                              T1–T3 headline figures (offline)
 data/
-  transcripts/<corpus>.jsonl            model-independent
-  <model>/turns.jsonl                   per (transcript, rendering, turn) rows
-  <model>/hidden/<tid>__<rendering>.npz EOT activations
-  <model>/{fit.json,probe.npz(stacked),fit_oof.npz,decode.json,decode_rows.csv,layer_probe_compare.json}
+  transcripts/<corpus>.jsonl                 model-independent
+  <model>/rows.jsonl                         per (source,id,rendering,turn,mode) rows
+  <model>/hidden/<source>__<id>__<rendering>__<mode>.npz   slot activations
+  <model>/natural/conversations.json         model-generated looms
+  <model>/gen/                               Arm G trajectories + readouts
+  <model>/{probe.npz,probe_meta.json,fit_oof.npz,felt.json,transfer.json,decode_rows.csv,natural_reads.csv}
 ```
 
 Data and figures are gitignored regenerated artifacts.

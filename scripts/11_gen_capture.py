@@ -1,23 +1,22 @@
-"""Arm G capture: generation-side time.
+"""Arm G capture: generation-side time (the T4 corpus).
 
 Generate long neutral responses and capture the per-token residual-stream
-trajectory of the rollout (`SamplingConfig(return_hidden=True)` -> a
-`(T_gen, L, D)` stack per generation). At strides, fork a stateless readout
+trajectory of the rollout (``SamplingConfig(return_hidden=True)`` -> a
+``(T_gen, L, D)`` stack per generation). At strides, fork a stateless readout
 asking how long it *feels* like the model has been writing — the first-person
-felt-production-time, the generation-side analog of B_felt.
+felt-production-time, the generation-side analog of the felt readout.
 
-The mechanistic question (analyzed in `71_gen_time`): does producing tokens drive
-the *reading*-elapsed axis, or is felt-during-generation just token position?
+``50_generation`` analyzes these offline: does producing tokens drive the
+reading-elapsed axis (the slot probe's direction), or is it just position?
 
-    TIME_MODEL=gemma python scripts/70_generate.py
-    TIME_MODEL=gemma python scripts/70_generate.py --limit 1 --max-tokens 96   # smoke
+    TIME_MODEL=gemma python scripts/11_gen_capture.py
+    TIME_MODEL=gemma python scripts/11_gen_capture.py --limit 1 --max-tokens 96   # smoke
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 import zlib
@@ -33,7 +32,7 @@ from saklas import SamplingConfig, SaklasSession  # noqa: E402
 from time_experiment.capture import (  # noqa: E402
     ask_readout, parse_duration, release_memory, render,
 )
-from time_experiment.config import DATA_DIR, resolve_model  # noqa: E402
+from time_experiment.config import current_model  # noqa: E402
 
 try:
     from llmoji_study.capture import (  # noqa: E402
@@ -71,17 +70,16 @@ def main() -> None:
     ap.add_argument("--stride", type=int, default=64, help="felt-readout checkpoint stride")
     args = ap.parse_args()
 
-    base = resolve_model(os.environ.get("TIME_MODEL", "gemma"))
-    out = DATA_DIR / f"{base.short_name}_gen"
-    hid = out / "hidden"
+    M = current_model()
+    hid = M.gen_dir / "hidden"
     hid.mkdir(parents=True, exist_ok=True)
     items = list(PROMPTS.items())[: args.limit or None]
-    print(f"model: {base.short_name}  generations: {len(items)}  max_tokens: {args.max_tokens}")
+    print(f"model: {M.short_name}  generations: {len(items)}  max_tokens: {args.max_tokens}")
 
     rows: list[dict] = []
-    print(f"loading {base.model_id} ...")
+    print(f"loading {M.model_id} ...")
     t0 = time.time()
-    with SaklasSession.from_pretrained(base.model_id, device="auto", probes=[]) as session:
+    with SaklasSession.from_pretrained(M.model_id, device="auto", probes=[]) as session:
         maybe_override_ministral_chat_template(session)
         maybe_override_gpt_oss_chat_template(session)
         print(f"loaded in {time.time()-t0:.1f}s")
@@ -97,11 +95,10 @@ def main() -> None:
             if not hs:
                 print(f"  [{gid}] no hidden_states returned — skipping"); continue
             layers = sorted(int(L) for L in hs)
-            # each hs[L] is [T, D]; stack over layers -> (T, L, D)
-            H = np.stack([hs[L].to(torch.float32).cpu().numpy() for L in layers], axis=1)
+            H = np.stack([hs[L].to(torch.float32).cpu().numpy() for L in layers], axis=1)  # (T,L,D)
             T = H.shape[0]
             np.savez_compressed(hid / f"{gid}.npz", H=H, layers=np.array(layers, np.int64))
-            (out / f"{gid}.txt").write_text(res.text)
+            (M.gen_dir / f"{gid}.txt").write_text(res.text)
 
             # strided felt-production readouts: reconstruct the partial response.
             gen_ids = session.tokenizer(res.text, add_special_tokens=False)["input_ids"]
@@ -119,8 +116,8 @@ def main() -> None:
             release_memory(session.device)
             print(f"  [{gid}] T={T} tokens, {len(felt)} felt checkpoints ({time.time()-t:.0f}s)")
 
-    (out / "gen_rows.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
-    print(f"\ntrajectories -> {hid}/  rows -> {out}/gen_rows.jsonl")
+    (M.gen_dir / "gen_rows.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    print(f"\ntrajectories -> {hid}/  rows -> {M.gen_dir}/gen_rows.jsonl")
 
 
 if __name__ == "__main__":

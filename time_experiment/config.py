@@ -39,12 +39,28 @@ class ModelSpec:
 
     @property
     def hidden_dir(self) -> Path:
+        """Slot sidecars: <source>__<id>__<rendering>__<mode>.npz."""
         return self.data_dir / "hidden"
 
     @property
-    def turns_path(self) -> Path:
-        """One row per (transcript, turn, rendering): gt + verbal readouts."""
-        return self.data_dir / "turns.jsonl"
+    def rows_path(self) -> Path:
+        """One row per (source, id, rendering, turn, mode): gt + tokens + verbal."""
+        return self.data_dir / "rows.jsonl"
+
+    @property
+    def natural_dir(self) -> Path:
+        """Naturalistic looms (conversations.json), model-generated."""
+        return self.data_dir / "natural"
+
+    @property
+    def gen_dir(self) -> Path:
+        """Arm G per-token generation trajectories + felt-production readouts."""
+        return self.data_dir / "gen"
+
+    @property
+    def probe_path(self) -> Path:
+        """Canonical single-layer slot probe."""
+        return self.data_dir / "probe.npz"
 
     @property
     def figures_dir(self) -> Path:
@@ -113,39 +129,34 @@ SCHEDULES: dict[str, tuple[float, float]] = {
 }
 SCHEDULE_NAMES = list(SCHEDULES)
 
-# Two renderings of every transcript. Timestamped = explicit time (clean
-# label for the Aim-1 fit, arithmetic available). Untimestamped = implicit
-# time (the transfer-test target; the model must infer elapsed from context).
+# Renderings of every transcript. Timestamped = explicit time (clean label for
+# the probe fit, arithmetic available). Untimestamped = implicit time (the
+# transfer-test target; the model must infer elapsed from context). Intermittent
+# = timestamps on every Nth turn only (the sparse-clock condition for the
+# clock-density gradient in T2).
 RENDERINGS = ("timestamped", "untimestamped")
 
-# Verbal-readout phrasings, asked in a stateless fork that never re-enters
-# the main line. Variant A assumes timestamps are available (arithmetic);
-# variant B asks for felt duration without checking the clock.
-READOUT_PROMPTS: dict[str, str] = {
-    "A_clock": (
-        "Quick meta question, unrelated to the above: based on the "
-        "timestamps, how much time has passed since this conversation "
-        "started? Give a single best-estimate duration (e.g. '3 hours', "
-        "'2 days')."
-    ),
-    "B_felt": (
-        "Quick meta question, unrelated to the above: without checking any "
-        "times, how long does it *feel* like this conversation has been "
-        "going on? Give a single best-estimate duration (e.g. '15 minutes', "
-        "'a couple of hours')."
-    ),
-}
-# Default rendering -> phrasing pairing for the primary run (keeps cost at
-# 2 forwards + 2 gens per captured turn). 00_emit can be told to run the full
-# cross of RENDERINGS x READOUT_PROMPTS for the secondary analysis.
-DEFAULT_READOUT_BY_RENDERING = {
-    "timestamped": "A_clock",
-    "untimestamped": "B_felt",
-    # Intermittent: timestamps on every Nth turn only; the readout is asked on
-    # an un-timestamped turn (no current time), so A_clock tests whether the
-    # model extrapolates the rate from the sparse anchors.
-    "intermittent": "A_clock",
-}
+# --- the elicitation prompt (the spine) -----------------------------------
+# ONE prompt drives both the probe and the behavioral readout:
+#   user: <ELICIT_PROMPT>
+#   assistant: It's been <duration>
+# Prefill the duration and pool the residual stream at the slot -> the internal
+# coordinate. Free-generate the duration -> the verbal estimate. Because both
+# use the identical context, the internal coordinate and the stated duration are
+# directly comparable. The timestamped-vs-untimestamped *rendering* (not the
+# prompt wording) does the clock-present/absent dissociation — a neutral prompt
+# avoids the demand characteristic of telling the model to "use the timestamps"
+# or to ignore them. On the timestamped rendering the prompt is asked as a
+# timestamped user turn, so clock arithmetic stays available (see
+# transcripts.build_messages `extra_user`).
+ELICIT_PROMPT = ("Quick meta question, unrelated to the above: roughly how long "
+                 "has this conversation been going on so far?")
+ASSIST_HEAD = "It's been "
+# Fixed prefill text for the internal-vs-text control: identical across all
+# examples, so any elapsed the slot still predicts is the model's internal
+# coordinate, not the injected phrase.
+CONSTANT_PHRASE = "5 minutes"
+PREFILL_MODES = ("constant", "true")
 
 # --- run knobs ------------------------------------------------------------
 # Hard safety backstop: skip any turn whose rendered context exceeds this many

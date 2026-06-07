@@ -1,16 +1,27 @@
-"""Capture + readout primitives.
+"""Capture + readout primitives for the elicitation-slot probe.
 
-Two model touchpoints per captured turn:
+The canonical readout site is the **elicitation slot**:
 
-1. EOT capture — a single forward pass over the rendered transcript prefix,
-   pooling the residual stream at the last *content* token (saklas's canonical
-   pooling site). This is the internal "elapsed-time coordinate" source. The
-   main line is scripted, so we read activations directly rather than through
-   saklas's generation-time HiddenCapture.
+    user: <ELICIT_PROMPT>
+    assistant: It's been <duration>     <- pool the residual stream here
 
-2. Verbal readout — a stateless, pre-rendered (``raw=True``) generation that
-   asks "how long has passed?" and never commits to the loom tree. This is the
-   fork in a9's design: the question can't contaminate the main trajectory.
+Two model touchpoints per captured assistant turn, over the *same* context:
+
+1. Slot capture — a single forward over the rendered prefix + elicitation +
+   prefilled ``It's been <phrase>``, pooling all layers at the last content
+   token (the duration token). ``constant`` mode fixes the phrase ("5 minutes")
+   so the slot read is the internal coordinate, not the injected text; ``true``
+   mode prefills the actual humanized elapsed (the text-reading ceiling).
+
+2. Verbal readout — a stateless, pre-rendered (``raw=True``) generation of the
+   same elicitation prompt (no prefill); the model's free answer, parsed to
+   seconds. The stateless fork never commits to the loom, so asking can't
+   contaminate the trajectory.
+
+Slot capture is inherently one forward per turn (each turn's prefill tail makes
+its context unique and ends at a different absolute position), so the memory
+discipline is the ``--max-context-tokens`` backstop + ``release_memory`` per
+turn — not the multi-position single-forward trick the EOT line used.
 
 The free-text duration parser lives in ``durations.py`` (stdlib-only, so it's
 unit-testable without torch); it's re-exported here for convenience.
@@ -27,8 +38,10 @@ import torch
 from saklas import SamplingConfig
 from saklas.core.vectors import _capture_all_hidden_states, last_content_index
 
-from .config import READOUT_MAX_TOKENS, READOUT_TEMPERATURE
+from .config import ASSIST_HEAD, READOUT_MAX_TOKENS, READOUT_TEMPERATURE
 from .durations import parse_duration  # noqa: F401  (re-exported)
+
+_UNITS = (("day", 86400.0), ("hour", 3600.0), ("minute", 60.0), ("second", 1.0))
 
 
 def release_memory(device: Any) -> None:
@@ -59,23 +72,49 @@ def render(session: Any, messages: list[dict[str, str]], *, add_generation_promp
 
 def content_position(session: Any, rendered_text: str) -> tuple[int, int]:
     """(last-content-token index, token count) for a rendered context — no
-    forward pass. The index is computed on this prefix's own tokenization; since
-    a shorter prefix render is a string-prefix of a longer one and the
-    last-content token is interior (before trailing turn markers), the index is
-    also valid in any longer render that contains this prefix. Used to (a) apply
-    the context cap and (b) supply pool positions for the single-pass capture.
+    forward pass. Used to apply the context cap before the forward.
     """
     ids = session.tokenizer(rendered_text, add_special_tokens=False)["input_ids"]
     return last_content_index(ids, session.tokenizer), len(ids)
 
 
-# --- EOT activation capture ----------------------------------------------
-def capture_eot(session: Any, rendered_text: str) -> tuple[dict[int, np.ndarray], int]:
+def humanize(elapsed_s: float) -> str:
+    """Largest-unit natural duration phrase ('42 seconds', '5 minutes', '2 hours')."""
+    s = max(float(elapsed_s), 1.0)
+    for unit, div in _UNITS:
+        if s >= div:
+            n = round(s / div)
+            return f"{n} {unit}{'s' if n != 1 else ''}"
+    return "1 second"
+
+
+def elicit_render(session: Any, messages_with_question: list[dict[str, str]], phrase: str) -> str:
+    """Rendered prefix (ending in the elicitation user turn) + assistant head +
+    prefilled duration ``phrase``. ``messages_with_question`` must already end
+    with the ``{role: user, content: ELICIT_PROMPT}`` turn — built by the caller
+    (scripted via ``build_messages(..., extra_user=ELICIT_PROMPT)`` so the turn
+    carries a timestamp iff the rendering is timestamped; natural by appending a
+    plain user turn). The verbal readout renders the *same* messages with
+    ``add_generation_prompt=True`` and no prefill.
+    """
+    head = render(session, messages_with_question, add_generation_prompt=True)
+    return head + ASSIST_HEAD + phrase
+
+
+def slot_token(session: Any, rendered: str) -> str:
+    """Decoded token at the pooling slot — for ``--peek`` sanity checks."""
+    ids = session.tokenizer(rendered, add_special_tokens=False)["input_ids"]
+    return session.tokenizer.decode([ids[last_content_index(ids, session.tokenizer)]])
+
+
+# --- slot activation capture ---------------------------------------------
+def capture_slot(session: Any, rendered_text: str) -> tuple[dict[int, np.ndarray], int]:
     """Per-layer residual-stream vector at the last content token of
-    ``rendered_text``, plus the prefix token count.
+    ``rendered_text`` (the duration slot when given an elicit_render output),
+    plus the prefix token count.
 
     Returns ``({layer_idx: (hidden_dim,) float32}, n_tokens)``. ``n_tokens`` is
-    the raw context length — the position covariate the factorial controls for.
+    the context length — the position covariate the analysis controls for.
     """
     enc = session.tokenizer(
         rendered_text, return_tensors="pt", add_special_tokens=False,
@@ -92,55 +131,6 @@ def capture_eot(session: Any, rendered_text: str) -> tuple[dict[int, np.ndarray]
     )
     states = {int(L): v.detach().to(torch.float32).cpu().numpy() for L, v in caps.items()}
     return states, n_tokens
-
-
-def capture_multi_position(
-    session: Any, rendered_text: str, positions: list[int],
-) -> dict[int, np.ndarray]:
-    """Capture per-layer residual-stream vectors at MANY positions in ONE
-    forward pass over ``rendered_text``.
-
-    This is the memory-lean path for long transcripts: instead of one forward
-    per checkpoint turn (N forwards, N× the allocation churn), pool every
-    checkpoint's end-position in a single pass. Two memory wins vs a naive
-    per-turn loop:
-      - 1 forward instead of N (the MPS allocator sees one context size, not N).
-      - ``logits_to_keep=1`` skips the full-vocab logits tensor (~2GB at long
-        context) that capture never uses; falls back to a plain forward if the
-        model's forward doesn't accept the kwarg.
-
-    Returns ``{layer_idx: (len(positions), hidden_dim) float32}`` (host numpy).
-    """
-    enc = session.tokenizer(rendered_text, return_tensors="pt", add_special_tokens=False)
-    input_ids = enc["input_ids"].to(session.device)
-    seq = input_ids.shape[1]
-    pos_t = torch.tensor(
-        [min(max(int(p), 0), seq - 1) for p in positions], device=session.device,
-    )
-    layers = session.layers
-    captured: dict[int, torch.Tensor] = {}
-
-    def _make_hook(idx: int):
-        def _hook(module: Any, inp: Any, out: Any) -> None:
-            h = out if isinstance(out, torch.Tensor) else out[0]
-            # h: (1, seq, D) -> pool the requested rows -> (P, D), copy off the
-            # layer tensor so the forward can free it.
-            captured[idx] = h[0].index_select(0, pos_t).detach().to(torch.float32)
-        return _hook
-
-    handles = [layers[i].register_forward_hook(_make_hook(i)) for i in range(len(layers))]
-    try:
-        with torch.inference_mode():
-            try:
-                session.model(input_ids=input_ids, use_cache=False, logits_to_keep=1)
-            except TypeError:
-                session.model(input_ids=input_ids, use_cache=False)
-        if session.device.type == "mps":
-            torch.mps.synchronize()
-    finally:
-        for hh in handles:
-            hh.remove()
-    return {int(L): v.cpu().numpy() for L, v in captured.items()}
 
 
 # --- verbal readout (stateless fork) -------------------------------------
