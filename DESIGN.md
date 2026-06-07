@@ -52,9 +52,23 @@ assistant: It's been ▮
   ("5 minutes", fixed text → the coordinate *beyond* text) and `true` (humanized
   actual elapsed → the text-reading ceiling control). The `true`−`constant` gap
   is "reading the phrase" vs "a real internal coordinate".
-- **Free-generate** the blank in a stateless fork (`raw=True, stateless=True` —
-  never commits to the loom) and parse to seconds (`durations.py`) → the
-  **verbal estimate**.
+- **Score the blank** as a soft distribution: after `It's been `, teacher-force
+  each phrase in a log-spaced `DURATION_GRID` (1s→2wk) and softmax the per-phrase
+  log-probs → a distribution over how long the model thinks it's been
+  (`capture.verbal_distribution`). The point estimate is `exp(Σ pᵢ log secᵢ)`; the
+  spread is the model's uncertainty → the **verbal estimate**. No sampling
+  (deterministic, denoised) and no refusals — every turn yields a distribution
+  (the old free-generation refused ~69% of the time with no clock; "I don't have a
+  sense of time" now surfaces as a high-entropy distribution rather than a NaN).
+
+This is **symmetric with the probe**: both read the same elicitation slot — the
+probe maps mid-stack *activations* through our EV map (what the model represents),
+the verbal reads the final-layer residual through the model's own *unembedding
+`W_U`* (what it would say). So internal-vs-verbal is two linear readouts of one
+slot, ours vs the model's own. (The probe's slot is the duration *token* of the
+constant prefill; the verbal scores the position just before it — adjacent, same
+answer frame. A maximally-symmetric one-forward variant reading both at the
+pre-duration position is a noted follow-up.)
 
 Because both reads share the identical context, the coordinate and the estimate
 are directly comparable. The **rendering** — timestamped vs untimestamped — does

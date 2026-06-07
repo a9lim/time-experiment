@@ -22,9 +22,12 @@ and the canonical readout is the **prefilled elicitation slot** — render
 `user: <ELICIT_PROMPT> / assistant: It's been <duration>` and pool all layers at
 the duration token (`capture.capture_slot` via saklas's
 `_capture_all_hidden_states` + `last_content_index`), *not* via generation-time
-`HiddenCapture`. The verbal estimate is the same prompt free-generated in a
-stateless fork (`raw=True, stateless=True` — never commits to the loom). The
-only place `HiddenCapture`/`return_hidden` is used is T4 (`11_gen_capture`).
+`HiddenCapture`. The verbal estimate is a **soft duration distribution** read from
+the slot logits (`capture.verbal_distribution`: score a `DURATION_GRID` after
+`It's been ` and softmax) — the model's own `W_U` readout of the slot, symmetric
+to the probe's activation readout; deterministic, no refusals. The only place
+generation (`HiddenCapture`/`return_hidden`) is used is T4's rollout
+(`11_gen_capture`), whose felt-production readout is the same soft distribution.
 
 The earlier EOT site (pool a bare end-of-transcript token) and the *learned*
 all-layer stack are **removed** — the slot, read **EV-weighted across all layers**
@@ -75,8 +78,11 @@ first.
 
 ## Ethics
 
-Model welfare is in scope. The verbal-readout fork asks the model to introspect
-on felt duration; "I don't have a sense of time" is data (parses to NaN, counted
-as a refusal), not a failure. If the transfer test lands H2/H3 — i.e. the model
-genuinely represents more time as having passed than the clock shows — report it
-with explicit phenomenology caveats, as the siblings do.
+Model welfare is in scope. The verbal readout asks the model to introspect on
+felt duration. The soft-distribution readout reads the model's duration
+distribution from the logits rather than forcing a stated answer — arguably a
+gentler, richer read: the old "I don't have a sense of time" refusal now surfaces
+as a high-entropy distribution (the uncertainty is kept, not collapsed to a NaN).
+If the transfer test lands H2/H3 — i.e. the model genuinely represents more time
+as having passed than the clock shows — report it with explicit phenomenology
+caveats, as the siblings do.

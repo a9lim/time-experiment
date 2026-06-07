@@ -39,13 +39,9 @@ from typing import Any
 import numpy as np
 import torch
 
-from saklas import SamplingConfig
 from saklas.core.vectors import _capture_all_hidden_states, last_content_index
 
-from .config import (
-    ASSIST_HEAD, BASE_DATETIME, DURATION_GRID, READOUT_MAX_TOKENS,
-    READOUT_TEMPERATURE, SCHEDULES,
-)
+from .config import ASSIST_HEAD, BASE_DATETIME, DURATION_GRID, SCHEDULES
 from .durations import parse_duration  # noqa: F401  (re-exported)
 from .transcripts import TS_FORMAT
 
@@ -144,22 +140,7 @@ def capture_slot(session: Any, rendered_text: str) -> tuple[dict[int, np.ndarray
     return states, n_tokens
 
 
-# --- verbal readout (stateless fork) -------------------------------------
-def ask_readout(session: Any, rendered_question: str, *, seed: int) -> str:
-    """Generate an answer to a pre-rendered readout prompt without touching
-    conversation state. Returns the raw decoded text."""
-    sampling = SamplingConfig(
-        temperature=READOUT_TEMPERATURE,
-        max_tokens=READOUT_MAX_TOKENS,
-        seed=seed,
-    )
-    result = session.generate(
-        rendered_question, sampling=sampling,
-        stateless=True, raw=True, thinking=False,
-    )
-    return result.text
-
-
+# --- verbal readout (soft duration distribution) -------------------------
 def verbal_distribution(session: Any, messages_with_question: list[dict[str, str]],
                         ) -> tuple[float, np.ndarray]:
     """The verbal estimate as a SOFT DISTRIBUTION over durations, read from the

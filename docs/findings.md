@@ -11,7 +11,10 @@ layer weighted by its own R², no learned meta-model; one prompt, one probe). Th
 slot results (Pilot 5) are the canonical line; the EOT
 results (Pilots 1–4) are the superseded baseline the slot beats, kept as cited
 history. Pilots 2/3/6 were measured at the EOT site with the old A_clock/B_felt
-prompts. **Regenerating under the unified pipeline** re-derives the behavioral
+prompts. The **verbal readout is now a soft duration distribution** read from the
+slot logits (no sampling, no refusals — the ~69% no-clock refusal rate of the old
+free-generation is gone, so the felt decode is fully powered); numbers below from
+the generation-based readout are superseded by the regeneration. **Regenerating under the unified pipeline** re-derives the behavioral
 numbers under the neutral prompt and the internal coordinate at the slot locus
 (see "What regeneration re-measures"); the qualitative story is expected to hold,
 specific multipliers will move.

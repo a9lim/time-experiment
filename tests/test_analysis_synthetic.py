@@ -86,7 +86,7 @@ def build_fake(model, *, n_tx=30, T=8, D=32, alpha=1.2, sigma=1.5, sigma_noise=3
                         "source": "scripted", "id": f"tx{i:03d}", "rendering": rendering,
                         "mode": "constant", "turn_idx": k, "role": role,
                         "gt_elapsed_s": elapsed, "tokens": tokens, "schedule": "synthetic",
-                        "variant": None, "verbal_raw": None, "verbal_seconds": verbal_s,
+                        "variant": None, "verbal_dist": None, "verbal_seconds": verbal_s,
                     })
                 save_states(
                     sidecar_path(model.hidden_dir, "scripted", f"tx{i:03d}", rendering, "constant"),
@@ -108,7 +108,7 @@ def build_fake(model, *, n_tx=30, T=8, D=32, alpha=1.2, sigma=1.5, sigma_noise=3
                     "mode": "constant", "turn_idx": k, "role": role,
                     "gt_elapsed_s": None, "tokens": 50 * (k + 1), "schedule": None,
                     "variant": ("affect" if c % 2 else "neutral"),
-                    "verbal_raw": None, "verbal_seconds": float(300 * (c + 1)),
+                    "verbal_dist": None, "verbal_seconds": float(300 * (c + 1)),
                 })
             save_states(
                 sidecar_path(model.hidden_dir, "natural", f"conv{c}", "untimestamped", "constant"),

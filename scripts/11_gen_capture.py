@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from saklas import SamplingConfig, SaklasSession  # noqa: E402
 
 from time_experiment.capture import (  # noqa: E402
-    ask_readout, parse_duration, release_memory, render,
+    release_memory, render, verbal_distribution,
 )
 from time_experiment.config import current_model  # noqa: E402
 
@@ -100,7 +100,9 @@ def main() -> None:
             np.savez_compressed(hid / f"{gid}.npz", H=H, layers=np.array(layers, np.int64))
             (M.gen_dir / f"{gid}.txt").write_text(res.text)
 
-            # strided felt-production readouts: reconstruct the partial response.
+            # strided felt-production readouts: reconstruct the partial response,
+            # then read the felt-writing duration as the same soft grid distribution
+            # used by the reading side (no sampling, no refusals).
             gen_ids = session.tokenizer(res.text, add_special_tokens=False)["input_ids"]
             felt = []
             for s in list(range(args.stride, T + 1, args.stride)) or [T]:
@@ -108,9 +110,8 @@ def main() -> None:
                 msgs = [{"role": "user", "content": prompt},
                         {"role": "assistant", "content": partial},
                         {"role": "user", "content": FELT_Q}]
-                q = render(session, msgs, add_generation_prompt=True)
-                raw = ask_readout(session, q, seed=_seed(gid, s))
-                felt.append({"s": s, "felt_raw": raw, "felt_s": parse_duration(raw)})
+                fs, fdist = verbal_distribution(session, msgs)
+                felt.append({"s": s, "felt_s": fs, "felt_dist": [round(float(x), 5) for x in fdist]})
                 release_memory(session.device)
             rows.append({"gen_id": gid, "n_tokens": int(T), "layers": layers, "felt": felt})
             release_memory(session.device)

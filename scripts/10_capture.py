@@ -7,9 +7,11 @@ For every captured assistant turn we render the elicitation prompt and, over the
     pool all layers at the duration token. Two modes — ``constant`` (fixed
     "5 minutes" → internal coordinate, text held fixed) and ``true`` (humanized
     actual elapsed → the text-reading ceiling control).
-  - verbal estimate (the behavioral readout): free-generate the same prompt in a
-    stateless fork and parse the answer to seconds. Captured once per assistant
-    turn (mode-independent) and attached to the ``constant`` row.
+  - verbal estimate (the behavioral readout): the soft duration distribution read
+    from the slot logits (``capture.verbal_distribution`` — the model's own W_U
+    readout, symmetric to the probe's activation readout; no sampling, no
+    refusals). Captured once per assistant turn and attached to the ``constant``
+    row as ``verbal_seconds`` (point) + ``verbal_dist`` (grid probs).
 
 Sources:
   - scripted transcripts (``--corpus``), renderings timestamped / untimestamped
@@ -18,14 +20,19 @@ Sources:
   - natural looms (from 01_natural), constant mode: untimestamped (felt) +
     timestamped (injected-clock control, gt = injected elapsed).
 
+``--verbal-only`` recomputes just the verbal readout over already-captured turns
+(slots untouched, resumable) — the migration path for data captured before the
+soft readout, and the re-score path when ``DURATION_GRID`` changes.
+
 Memory: slot capture is one forward per turn (each prefill tail makes the
 context unique) — the discipline is ``--max-context-tokens`` + per-turn
 ``release_memory``. Resume skips (source,id,rendering,mode) already captured.
 
     TIME_MODEL=gemma python scripts/10_capture.py --corpus pilot
     TIME_MODEL=gemma python scripts/10_capture.py --corpus smoke --scripted-limit 2 --peek
+    TIME_MODEL=gemma python scripts/10_capture.py --corpus pilot --verbal-only  # re-score verbal
     TIME_MODEL=gemma TIME_VARIANT=inflation python scripts/10_capture.py --corpus inflation \\
-        --renderings instant,untimestamped --no-true --no-natural
+        --renderings timestamped,untimestamped --no-true --no-natural
 """
 
 from __future__ import annotations
@@ -136,6 +143,80 @@ def _done(rows_path: Path, hidden_dir: Path) -> set[tuple]:
     return seen
 
 
+def iter_units(corpus, looms, renderings, timestamp_stride):
+    """Yield ``(source, conv_id, rendering, turns)`` — the elicitation contexts,
+    built identically for full capture and ``--verbal-only`` (no duplication).
+    ``turns`` items: dict(turn_idx, gt, schedule, variant, msgs_q)."""
+    for tx in corpus:
+        for rendering in renderings:
+            ts = ts_spec(rendering, tx.turn_count, timestamp_stride)
+            turns = [{"turn_idx": turn.idx, "gt": turn.elapsed_s, "schedule": tx.schedule,
+                      "variant": None,
+                      "msgs_q": build_messages(tx, turn.idx, **ts, extra_user=ELICIT_PROMPT)}
+                     for turn in tx.turns if turn.role == "assistant"]
+            yield "scripted", tx.id, rendering, turns
+    for conv_id, loom in looms.items():
+        msgs = loom["messages"]
+        ts_msgs, elapsed = inject_timestamps(msgs, _seed(conv_id, "ts"))
+        for rendering, rmsgs, gts in (("untimestamped", msgs, [None] * len(msgs)),
+                                      ("timestamped", ts_msgs, elapsed)):
+            turns = [{"turn_idx": k, "gt": gts[k], "schedule": None, "variant": loom.get("variant"),
+                      "msgs_q": rmsgs[: k + 1] + [{"role": "user", "content": ELICIT_PROMPT}]}
+                     for k, m in enumerate(msgs) if m["role"] == "assistant"]
+            yield "natural", conv_id, rendering, turns
+
+
+def full_capture(session, M, units, *, modes, cap_tokens, peek, done):
+    """Slot capture (+ inline verbal) over every unit, appending rows + sidecars.
+    Natural is constant-only. Resumes past (source,id,rendering,mode) in ``done``."""
+    cap = Capturer(session, modes=modes, cap=cap_tokens, peek=peek, do_verbal=True)
+    with M.rows_path.open("a") as out:
+        for source, cid, rendering, turns in units:
+            run_modes = ("constant",) if source == "natural" else modes
+            if all((source, cid, rendering, m) in done for m in run_modes):
+                continue
+            cap.modes = run_modes
+            t = time.time()
+            cap.run(source, cid, rendering, turns, M.hidden_dir)
+            for r in cap.rows:
+                out.write(json.dumps(r) + "\n")
+            out.flush()
+            cap.rows.clear()
+            print(f"  {source} {cid} {rendering}: {len(turns)} turns ({time.time()-t:.0f}s)")
+    print(f"\nrows -> {M.rows_path}\nsidecars -> {M.hidden_dir}/")
+
+
+def refresh_verbal(session, M, units, *, force):
+    """``--verbal-only``: recompute just the soft-distribution verbal readout over
+    already-captured turns, updating rows.jsonl in place (slots untouched).
+    Resumable — rows that already carry ``verbal_dist`` are skipped unless
+    ``--force``. The migration path for data captured before the soft readout, and
+    the re-score path when ``DURATION_GRID`` changes."""
+    if not M.rows_path.exists():
+        raise SystemExit(f"no rows at {M.rows_path}; run a full capture first")
+    rows = [json.loads(l) for l in M.rows_path.read_text().splitlines() if l.strip()]
+    index = {(r["source"], r["id"], r["rendering"], r["turn_idx"]): r
+             for r in rows if r["mode"] == "constant" and r["role"] == "assistant"}
+    todo = [(u[0], u[1], u[2], t) for u in units for t in u[3]  # (source,id,rendering,turn)
+            if (u[0], u[1], u[2], t["turn_idx"]) in index
+            and (force or index[(u[0], u[1], u[2], t["turn_idx"])].get("verbal_dist") is None)]
+    print(f"verbal to (re)compute: {len(todo)} / {len(index)}")
+    done = 0
+    for source, cid, rendering, t in todo:
+        r = index[(source, cid, rendering, t["turn_idx"])]
+        sec, dist = verbal_distribution(session, t["msgs_q"])
+        r["verbal_seconds"] = sec
+        r["verbal_dist"] = [round(float(x), 5) for x in dist]
+        r.pop("verbal_raw", None)
+        release_memory(session.device)
+        done += 1
+        if done % 100 == 0:
+            M.rows_path.write_text("\n".join(json.dumps(x) for x in rows) + "\n")
+            print(f"  {done}/{len(todo)}  (last {source} {cid} {rendering} t{t['turn_idx']} -> {sec:.0f}s)")
+    M.rows_path.write_text("\n".join(json.dumps(x) for x in rows) + "\n")
+    print(f"\ndone. {done} verbal distributions -> {M.rows_path}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", default="pilot")
@@ -148,6 +229,9 @@ def main() -> None:
     ap.add_argument("--no-true", action="store_true", help="skip the true-prefill control")
     ap.add_argument("--no-natural", action="store_true", help="skip the natural looms")
     ap.add_argument("--peek", action="store_true", help="print the slot token per capture")
+    ap.add_argument("--verbal-only", action="store_true",
+                    help="recompute only the verbal soft-distribution readout (slots untouched)")
+    ap.add_argument("--force", action="store_true", help="--verbal-only: recompute even if present")
     args = ap.parse_args()
     renderings = [r.strip() for r in args.renderings.split(",") if r.strip()]
     modes = ("constant",) if args.no_true else ("constant", "true")
@@ -162,11 +246,11 @@ def main() -> None:
         corpus = corpus[: args.scripted_limit]
     looms_path = M.natural_dir / "conversations.json"
     looms = json.loads(looms_path.read_text()) if (looms_path.exists() and not args.no_natural) else {}
-    done = _done(M.rows_path, M.hidden_dir)
+    units = list(iter_units(corpus, looms, renderings, args.timestamp_stride))
 
-    print(f"model: {M.short_name} ({M.model_id})")
-    print(f"corpus: {corpus_path.name} ({len(corpus)} transcripts) x renderings {renderings} "
-          f"x modes {modes}; natural looms: {len(looms)}; cap: {args.max_context_tokens}")
+    print(f"model: {M.short_name} ({M.model_id})  mode: {'verbal-only' if args.verbal_only else 'full capture'}")
+    print(f"corpus: {corpus_path.name} ({len(corpus)} transcripts) x renderings {renderings}; "
+          f"natural looms: {len(looms)}")
 
     print(f"loading {M.model_id} ...")
     t0 = time.time()
@@ -174,56 +258,11 @@ def main() -> None:
         maybe_override_ministral_chat_template(session)
         maybe_override_gpt_oss_chat_template(session)
         print(f"loaded in {time.time()-t0:.1f}s")
-        cap = Capturer(session, modes=modes, cap=args.max_context_tokens,
-                       peek=args.peek, do_verbal=True)
-
-        with M.rows_path.open("a") as out:
-            def flush():
-                for r in cap.rows:
-                    out.write(json.dumps(r) + "\n")
-                out.flush()
-                cap.rows.clear()
-
-            # --- scripted ---
-            for tx in corpus:
-                for rendering in renderings:
-                    if all((("scripted", tx.id, rendering, m) in done) for m in modes):
-                        continue
-                    ts = ts_spec(rendering, tx.turn_count, args.timestamp_stride)
-                    turns = [
-                        {"turn_idx": turn.idx, "gt": turn.elapsed_s, "schedule": tx.schedule,
-                         "variant": None,
-                         "msgs_q": build_messages(tx, turn.idx, **ts, extra_user=ELICIT_PROMPT)}
-                        for turn in tx.turns if turn.role == "assistant"
-                    ]
-                    t = time.time()
-                    cap.run("scripted", tx.id, rendering, turns, M.hidden_dir)
-                    flush()
-                    print(f"  scripted {tx.id} {rendering}: {len(turns)} turns ({time.time()-t:.0f}s)")
-
-            # --- natural: untimestamped (felt) + timestamped (injected control) ---
-            for conv_id, loom in looms.items():
-                msgs = loom["messages"]
-                variant = loom.get("variant")
-                ts_msgs, elapsed = inject_timestamps(msgs, _seed(conv_id, "ts"))
-                for rendering, rmsgs, gts in (
-                    ("untimestamped", msgs, [None] * len(msgs)),
-                    ("timestamped", ts_msgs, elapsed)):
-                    if ("natural", conv_id, rendering, "constant") in done:
-                        continue
-                    turns = [
-                        {"turn_idx": k, "gt": gts[k], "schedule": None, "variant": variant,
-                         "msgs_q": rmsgs[: k + 1] + [{"role": "user", "content": ELICIT_PROMPT}]}
-                        for k, m in enumerate(msgs) if m["role"] == "assistant"
-                    ]
-                    nat_modes = cap.modes
-                    cap.modes = ("constant",)  # natural is constant-only
-                    cap.run("natural", conv_id, rendering, turns, M.hidden_dir)
-                    cap.modes = nat_modes
-                    flush()
-                    print(f"  natural {conv_id} {rendering}: {len(turns)} turns")
-
-    print(f"\nrows -> {M.rows_path}\nsidecars -> {M.hidden_dir}/")
+        if args.verbal_only:
+            refresh_verbal(session, M, units, force=args.force)
+        else:
+            full_capture(session, M, units, modes=modes, cap_tokens=args.max_context_tokens,
+                         peek=args.peek, done=_done(M.rows_path, M.hidden_dir))
 
 
 if __name__ == "__main__":

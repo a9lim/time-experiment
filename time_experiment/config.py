@@ -180,8 +180,6 @@ DURATION_GRID: list[tuple[str, float]] = [
 # not help peak). Default is conservative; raise it freely on a small model
 # (llama32_3b / phi4_mini), where long contexts are cheap.
 MAX_CONTEXT_TOKENS = 1500
-READOUT_MAX_TOKENS = 64
-READOUT_TEMPERATURE = 0.7
 # Floor on elapsed seconds for inclusion in the log-elapsed fit (turn 0 is
 # ~0s -> log undefined). Turns below this are still captured + stored.
 MIN_ELAPSED_S = 1.0

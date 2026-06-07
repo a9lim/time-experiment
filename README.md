@@ -35,9 +35,10 @@ python scripts/00_corpus.py --name smoke --n-per-cell 1 --turn-counts 4,8   # sm
 python scripts/00_corpus.py                                                  # pilot
 TIME_MODEL=gemma python scripts/01_natural.py                # naturalistic looms (model)
 
-# --- capture: the elicitation slot + the verbal estimate ---
+# --- capture: the elicitation slot (probe) + the verbal soft distribution ---
 TIME_MODEL=gemma python scripts/10_capture.py --corpus smoke --scripted-limit 2 --peek  # smoke
 TIME_MODEL=gemma python scripts/10_capture.py --corpus pilot
+TIME_MODEL=gemma python scripts/10_capture.py --corpus pilot --verbal-only  # re-score verbal only
 TIME_MODEL=gemma python scripts/11_gen_capture.py            # Arm G per-token trajectories
 
 # --- the four throughlines (offline; read captures, no re-emit) ---
@@ -79,7 +80,7 @@ python3 tests/test_analysis_synthetic.py # fit -> transfer -> decode -> verdict 
 time_experiment/
   config.py        model resolution (shared registry), paths, schedules, ELICIT_PROMPT
   transcripts.py   procedural timestamped-transcript generator + rendering
-  capture.py       slot pooling + elicit-render helper + stateless verbal readout
+  capture.py       slot pooling + elicit-render + verbal_distribution (soft readout)
   durations.py     free-text duration -> seconds (stdlib only)
   storage.py       unified slot sidecar (source,id,rendering,mode) -> (T,L,D)
   analysis.py      assembly, grouped-CV EV-weighted all-layer probe, H1/H2/H3 classifier
