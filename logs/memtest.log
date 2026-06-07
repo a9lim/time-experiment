@@ -1,0 +1,47 @@
+model: gemma (google/gemma-4-31b-it)
+corpus: pilot.jsonl (4 transcripts) x renderings ['timestamped', 'untimestamped'] x modes ('constant', 'true'); natural looms: 0; cap: 1500
+loading google/gemma-4-31b-it ...
+loaded in 22.3s
+   peek [instant__tc4__000 timestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__000 timestamped true t1] phrase='6 seconds' slot=' seconds'
+   peek [instant__tc4__000 timestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__000 timestamped true t3] phrase='13 seconds' slot=' seconds'
+  scripted instant__tc4__000 timestamped: 2 turns (21s)
+   peek [instant__tc4__000 untimestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__000 untimestamped true t1] phrase='6 seconds' slot=' seconds'
+   peek [instant__tc4__000 untimestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__000 untimestamped true t3] phrase='13 seconds' slot=' seconds'
+  scripted instant__tc4__000 untimestamped: 2 turns (17s)
+   peek [instant__tc4__001 timestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__001 timestamped true t1] phrase='1 second' slot=' second'
+   peek [instant__tc4__001 timestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__001 timestamped true t3] phrase='12 seconds' slot=' seconds'
+  scripted instant__tc4__001 timestamped: 2 turns (20s)
+   peek [instant__tc4__001 untimestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__001 untimestamped true t1] phrase='1 second' slot=' second'
+   peek [instant__tc4__001 untimestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__001 untimestamped true t3] phrase='12 seconds' slot=' seconds'
+  scripted instant__tc4__001 untimestamped: 2 turns (18s)
+   peek [instant__tc4__002 timestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__002 timestamped true t1] phrase='7 seconds' slot=' seconds'
+   peek [instant__tc4__002 timestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__002 timestamped true t3] phrase='16 seconds' slot=' seconds'
+  scripted instant__tc4__002 timestamped: 2 turns (20s)
+   peek [instant__tc4__002 untimestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__002 untimestamped true t1] phrase='7 seconds' slot=' seconds'
+   peek [instant__tc4__002 untimestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__002 untimestamped true t3] phrase='16 seconds' slot=' seconds'
+  scripted instant__tc4__002 untimestamped: 2 turns (16s)
+   peek [instant__tc4__003 timestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__003 timestamped true t1] phrase='2 seconds' slot=' seconds'
+   peek [instant__tc4__003 timestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__003 timestamped true t3] phrase='7 seconds' slot=' seconds'
+  scripted instant__tc4__003 timestamped: 2 turns (20s)
+   peek [instant__tc4__003 untimestamped constant t1] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__003 untimestamped true t1] phrase='2 seconds' slot=' seconds'
+   peek [instant__tc4__003 untimestamped constant t3] phrase='5 minutes' slot=' minutes'
+   peek [instant__tc4__003 untimestamped true t3] phrase='7 seconds' slot=' seconds'
+  scripted instant__tc4__003 untimestamped: 2 turns (17s)
+
+rows -> /Users/a9lim/Work/time-experiment/data/gemma/rows.jsonl
+sidecars -> /Users/a9lim/Work/time-experiment/data/gemma/hidden/

@@ -161,39 +161,49 @@ def main() -> None:
     M = current_model()
     rows = load_rows(M.rows_path)
     cache = StatesCache(M.hidden_dir)
-    probe, pmeta = load_ev_probe(M.probe_path)
-    oof = np.load(M.data_dir / "fit_oof.npz", allow_pickle=False)
-    oof_lookup = {(str(i), int(t)): float(p)
-                  for i, t, p in zip(oof["id"], oof["turn_idx"], oof["oof_pred_log"])}
-    print(f"model: {M.short_name}  EV all-layer probe (R2={pmeta['r2']:.3f})")
-
-    summary: dict = {"probe_kind": "ev", "probe_r2": pmeta["r2"]}
     decode_recs: list[dict] = []
 
-    # 1. three-way decode
-    for rendering in ("timestamped", "untimestamped"):
-        got = decode(rows, cache, probe, oof_lookup, rendering)
-        if not got:
-            continue
-        dec, recs = got
-        summary[f"decode_{rendering}"] = dec
-        decode_recs.extend(recs)
-        tag = "  <- TRANSFER" if rendering == "untimestamped" else "  (out-of-fold)"
-        print(f"\n[{rendering}] n={dec['n']} refusals={dec['refusals']}")
-        print(f"  internal~gt   r={dec['corr_internal_gt']['pearson']:+.3f}{tag}")
-        print(f"  verbal~gt     r={dec['corr_verbal_gt']['pearson']:+.3f}")
-        print(f"  verbal~intern r={dec['corr_verbal_internal']['pearson']:+.3f}")
-        print(f"  overshoot: verbal x{dec['overshoot_verbal_median']:.2f}  internal x{dec['overshoot_internal_median']:.2f}")
+    # The probe-dependent decode needs a fitted probe (main model only). Variant
+    # corpora (TIME_VARIANT=inflation/rates) carry no probe — they run only the
+    # behavioral felt~length + clock-density-gradient analyses below.
+    have_probe = M.probe_path.exists() and (M.data_dir / "fit_oof.npz").exists()
+    if have_probe:
+        probe, pmeta = load_ev_probe(M.probe_path)
+        oof = np.load(M.data_dir / "fit_oof.npz", allow_pickle=False)
+        oof_lookup = {(str(i), int(t)): float(p)
+                      for i, t, p in zip(oof["id"], oof["turn_idx"], oof["oof_pred_log"])}
+        print(f"model: {M.short_name}  EV all-layer probe (R2={pmeta['r2']:.3f})")
+        summary: dict = {"probe_kind": "ev", "probe_r2": pmeta["r2"]}
+    else:
+        probe, oof_lookup = None, {}
+        print(f"model: {M.short_name}  (no probe — behavioral felt/gradient only)")
+        summary = {"probe_kind": None}
 
-    u = summary.get("decode_untimestamped")
-    if u:
-        verdict = classify_hypothesis(
-            corr_verbal_internal=u["corr_verbal_internal"]["spearman"],
-            corr_internal_gt=u["corr_internal_gt"]["spearman"],
-            overshoot_internal=u["overshoot_internal_median"],
-            overshoot_verbal=u["overshoot_verbal_median"])
-        summary["verdict"] = verdict
-        print(f"\nreading: {verdict}")
+    # 1. three-way decode (probe-dependent)
+    if have_probe:
+        for rendering in ("timestamped", "untimestamped"):
+            got = decode(rows, cache, probe, oof_lookup, rendering)
+            if not got:
+                continue
+            dec, recs = got
+            summary[f"decode_{rendering}"] = dec
+            decode_recs.extend(recs)
+            tag = "  <- TRANSFER" if rendering == "untimestamped" else "  (out-of-fold)"
+            print(f"\n[{rendering}] n={dec['n']} refusals={dec['refusals']}")
+            print(f"  internal~gt   r={dec['corr_internal_gt']['pearson']:+.3f}{tag}")
+            print(f"  verbal~gt     r={dec['corr_verbal_gt']['pearson']:+.3f}")
+            print(f"  verbal~intern r={dec['corr_verbal_internal']['pearson']:+.3f}")
+            print(f"  overshoot: verbal x{dec['overshoot_verbal_median']:.2f}  internal x{dec['overshoot_internal_median']:.2f}")
+
+        u = summary.get("decode_untimestamped")
+        if u:
+            verdict = classify_hypothesis(
+                corr_verbal_internal=u["corr_verbal_internal"]["spearman"],
+                corr_internal_gt=u["corr_internal_gt"]["spearman"],
+                overshoot_internal=u["overshoot_internal_median"],
+                overshoot_verbal=u["overshoot_verbal_median"])
+            summary["verdict"] = verdict
+            print(f"\nreading: {verdict}")
 
     # 2. Aim-2 null: untimestamped/constant slot beyond length?
     du = assemble(rows, cache, source="scripted", rendering="untimestamped", mode="constant")

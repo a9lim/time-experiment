@@ -48,7 +48,7 @@ TIME_MODEL=gemma python scripts/50_generation.py    # T4 — generation-side tim
 
 # --- variant corpora for the T2 clock-density gradient ---
 TIME_MODEL=gemma TIME_VARIANT=inflation python scripts/10_capture.py --corpus inflation \
-    --renderings instant,untimestamped --no-true --no-natural
+    --renderings timestamped,untimestamped --no-true --no-natural
 TIME_MODEL=gemma TIME_VARIANT=inflation python scripts/30_felt.py
 TIME_MODEL=gemma TIME_VARIANT=rates python scripts/10_capture.py --corpus rates \
     --renderings timestamped,intermittent,untimestamped --no-true --no-natural
