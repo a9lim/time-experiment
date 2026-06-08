@@ -246,3 +246,13 @@ to a minimally clock-pointing variant.
   as experience-equivalent during production" idea on data **already on disk** —
   no new generations — and saklas trait-monitoring suggests the answer is yes
   (states do move across a rollout). The cheaper, higher-surprise of the two.
+- **The V spectrum: input vs output rate, and the saturation knee.** Two points
+  exist already — `V_context ≈ 0.29 s/token` (T1/T2, felt-conversation-time vs
+  context) and `V_out ≈ 0.006 s/token` (T4, felt-writing-time vs output) — a ~46×
+  input/output gap that mirrors the token-time paper's unmeasured `V_in`/`V_out`
+  split. What's missing is `V_context` across a wide range: fit it from ~100 to
+  ~100k context tokens and find the **saturation knee** — where the clean internal
+  linear law and the behavioral readout part ways ("feels like hours" stops being
+  linear). That knee is the quantitative form of the internal-linear /
+  behavioral-saturating dissociation, and the right input to V is *current context
+  length*, not cumulative tokens processed.
