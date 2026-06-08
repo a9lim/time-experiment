@@ -1,178 +1,190 @@
 # findings
 
-Citable results, organized by the four throughlines. Numbers are from pilot runs
-on **gemma-4-31b-it** (2026-06-06); treat as provisional until replicated across
-models.
+Citable results on **gemma-4-31b-it** (2026-06-07), unified slot pipeline; pilot
+scale, single model — treat as provisional until replicated across families.
 
-**Provenance + status.** The pipeline was consolidated (2026-06-06) to canonicalize
-the elapsed-time probe as the **prefilled elicitation slot**, read by an
-**EV-weighted all-layer probe** (saklas's explained-variance aggregation — every
-layer weighted by its own R², no learned meta-model; one prompt, one probe). The
-slot results (Pilot 5) are the canonical line; the EOT
-results (Pilots 1–4) are the superseded baseline the slot beats, kept as cited
-history. Pilots 2/3/6 were measured at the EOT site with the old A_clock/B_felt
-prompts. The **verbal readout is now a soft duration distribution** read from the
-slot logits (no sampling, no refusals — the ~69% no-clock refusal rate of the old
-free-generation is gone, so the felt decode is fully powered); numbers below from
-the generation-based readout are superseded by the regeneration. **Regenerating under the unified pipeline** re-derives the behavioral
-numbers under the neutral prompt and the internal coordinate at the slot locus
-(see "What regeneration re-measures"); the qualitative story is expected to hold,
-specific multipliers will move.
+## Headline
 
----
+**Elapsed conversational time is linearly encoded in context length, on the
+residual stream.** With no clock in the transcript, the slot probe's elapsed read
+grows as a clean linear function of token count:
 
-## T1 — the model represents elapsed time, read cleanest at the slot
+> **internal elapsed ≈ V · tokens,  V ≈ 0.29 s/token,  r = 0.88, intercept ≈ 0**
+> (n=432 no-clock turns; equally a log–log law, r=0.85 — the slot encodes
+> log-tokens on a log-elapsed axis, which exponentiates to a ~linear
+> token→seconds rate).
 
-**Canonical (Pilot 5, prefilled-duration slot).** Prefill an explicit duration
-into the assistant turn and probe at the duration token. Per-layer grouped-CV
-R²(log gt) on scripted transcripts:
+This is the **token-time hypothesis** (`T_wall = T_tok · V`, *Discrete Minds in a
+Continuous World*, EMNLP-F 2025) **made representational and measured**: they
+*assumed* a constant per-token rate and calibrated it from output token counts;
+we read it **off the activations** and find it is genuinely linear, through the
+origin, with a measured V. It extends Gurnee & Tegmark (linear-probe time from the
+residual stream) from **absolute/calendar** time to **elapsed conversational**
+time. The model's *stated* duration confirms the direction (felt rises with
+length) but as a **noisier, saturating echo** of the clean internal code (below).
 
-| condition | best layer | R²(gt) | partial(\|tokens) | reading |
-|-----------|-----------:|-------:|------------------:|---------|
-| EOT stack (baseline) | all | 0.586 | 0.529 | superseded site |
-| timestamped / true | L1 | 0.998 | 0.996 | injected text (ceiling) |
-| **timestamped / constant** | **L32** | **0.984** | **0.981** | **internal clock-derived** |
-| untimestamped / true | L2 | 0.998 | 0.996 | injected text |
-| untimestamped / constant | L2 | −0.009 | −0.089 | nothing (no clock) |
-
-With the text held **constant**, the slot still predicts true elapsed at R²=0.98,
-at **mid-stack L32** — the model's internal, clock-derived elapsed surfaced at the
-readout token, beyond text (the `true`−`constant` gap) and beyond length (partial
-0.98). With **no clock** the slot encodes nothing (≈0): the Aim-2 null at the
-ideal readout site. Layer choice is non-circular (L32 is the gt-selected best).
-
-**EOT baseline (Pilot 1/1b, cited, superseded).** The original EOT-pooled probe:
-single best layer L59 CV R²=0.520 (ρ=0.751); an all-layer nested stack reached
-0.586 (partial 0.529). The architecture bake-off (single vs concat vs stack)
-showed stack > single > naive-concat. All superseded by the slot — `20_probe`
-fits a single layer and reports the slot's own controls, not the EOT contrast.
-
-**Geometry (Pilot 1, EOT L59 locus; slot locus will differ).** The explicit-time
-axis was ~1-D in early layers (L2 PC1 97.5%), more curved deep (PC1≈68%), and
-weakly more linear in *raw* timestamp magnitude than in log-t — clock-reading,
-not log-compressed subjective duration. No cyclic hour-of-day decode; a weak
-day-of-week signal riding the weekday token. `20_probe` recomputes a compact
-version at the slot locus.
+**Provenance.** Probe = EV-weighted all-layer **prefilled elicitation slot**
+(saklas explained-variance aggregation, one prompt). Verbal estimate = soft
+duration distribution from the slot logits; point = **log-interpolated median**
+(`capture.dist_point`, robust to multimodal tails) + **entropy** co-reported
+(`capture.dist_entropy`). No sampling, **0 refusals**. EOT-site numbers (Pilots
+1–4) survive only as cited history.
 
 ---
 
-## T2 — felt time is a length-driven prior, not a represented quantity
+## T1 — the encoding: elapsed time linearly probed at the slot
 
-**No internal felt-elapsed beyond length (Pilot 1).** Decoding true elapsed from
-*no-clock* activations is at the token-length baseline at every layer, and the
-**partial R² after removing log-tokens is ≈0 everywhere** (L2 −0.01 … L59 −0.20).
-The felt null is robust to capacity: the nested stack — which *gains* on explicit
-time — still gives partial ≈ 0 on felt. A real absence, not under-powered probing.
+EV all-layer probe on the timestamped/constant slot; target log(elapsed s),
+grouped-CV by conversation (n=432):
 
-**The felt verbal estimate is a near-constant prior (Pilot 1).** In short pilot
-contexts (≤600 tok) the felt estimate collapses to a **near-constant ~10 minutes**
-independent of actual elapsed (median felt 600 s in every schedule while real
-elapsed spans 42 s → 5 days) — inflation when real elapsed is small ("feels like
-hours"), compression when large.
+| metric | value | reading |
+|---|---:|---|
+| EV all-layer R² | **0.984** | the deployed probe |
+| best single layer (L32) | 0.995 | representational locus |
+| true-prefill ceiling | 0.9997 | text-reading ceiling |
+| log-tokens baseline | 0.066 | length alone ≈ nothing **with a clock** |
+| partial R² (tokens out) | **0.983** | elapsed *beyond* length |
+| no-clock null (vs gt) | −0.21 | can't read *true* elapsed without a clock |
 
-**Felt ≈ f(conversation length), saturating (Pilot 2, inflation arm).** Long dense
-transcripts with tiny real gaps: **felt vs length ρ=0.807; felt vs real elapsed
-ρ=0.337**. The length→felt curve: ~400 tok → "5 min", ~1500 tok → "2 hours"
-(saturates at 7200 s). In the tiny-real-elapsed regime this is massive inflation:
+With a clock, the slot reads elapsed at R²=0.98 **beyond** length (partial 0.98)
+and beyond text (the true−constant gap) — i.e. when the clock is present the model
+reads it, not just length. **Remove the clock and the same axis falls back to a
+linear function of length** (the Headline): the probe can no longer predict *true*
+elapsed (null −0.21, because the gap schedule decouples true time from length) but
+its read is now ≈ 0.29 s/token × context. So the elapsed axis is real and
+clock-driven when a clock exists, and **defaults to a linear length→time code when
+one doesn't** — exactly the token-time substrate.
 
-| turn | tokens | real | felt | inflation |
+**Geometry (slot locus).** PC1 of the log-t centroids explains 0.70 of variance
+and is **log-linear** (r(PC1, log-t)=0.95 vs raw 0.56): the axis lives in
+Weber–Fechner / log-duration coordinates — consistent with the headline (log-tokens
+on a log-elapsed axis → linear seconds-per-token). Per-layer R² climbs 0.49 (L0) →
+0.99 plateau from L24; EV weights near-uniform. (EOT baseline, cited/superseded:
+L59 R²=0.52, stack 0.59.)
+
+---
+
+## T2 — context length drives felt time; behavior confirms it, saturating
+
+**The behavioral read confirms the linear direction.** The verbal soft estimate
+**rises with context length** — per-turn median felt 41 → 213 → 224 → 210 → 266 s
+as context grows; ρ(felt, length) = 0.23 over all turns, **0.52 excluding the t11
+depth artifact** (below). So the model's *stated* duration is **not** independent
+of length: it tracks it, confirming token-time behaviorally.
+
+**But the behavioral code is a degraded, saturating echo of the internal one.**
+Side by side on the same no-clock turns:
+
+| read | shape | vs length | probe↔read |
+|---|---|---:|---:|
+| **probe** (activation) | clean **linear**, through origin, V=0.29 s/tok | r=0.88 | — |
+| **verbal** (W_U logits) | **saturating** (jumps to ~210 s by turn 3, plateaus) | r=0.21 | r=0.23 |
+
+The internal code keeps climbing linearly (67 → 98 → 146 → 204 s) while the stated
+estimate saturates (~210–266 s) and only weakly agrees with the probe turn-by-turn
+(r=0.23). So the representation encodes a **cleaner, more linear** length→time rate
+than the model's words reflect — a soft dissociation (internal precise, behavioral
+lossy/saturating), **not** a decoupling (the earlier "flat prior" reading was an
+artifact of the t11 collapse + multimodal noise depressing ρ; withdrawn).
+
+**The no-clock null, positively.** The probe predicts *nothing* about true elapsed
+without a clock (partial R² −0.14) — but that null's *positive content* is the
+Headline: what the no-clock slot encodes along the elapsed axis is **length**,
+linearly, and nothing beyond it.
+
+**Depth multimodality (surfaced as entropy).** At deep turns the no-clock felt
+distribution goes multimodal — turn 9 is a trimodal 30s/5min/6h vote (entropy
+1.65 bits, peak; "6 hours" mass schedule-independent at ~0.36). The geometric mean
+amplified this into a fake ~900 s spike; the log-interp-median point + entropy
+co-stat fixes it (point lands on the central mode, multimodality reads off
+`med_entropy_bits`). The t11 collapse (felt → ~23 s at the deepest turn) is the
+other half of the same depth instability; it is **not** a final-turn effect
+(`idx=7` final vs non-final are identical).
+
+**Clock-density gradient (robust).** Rate-sensitivity at fixed length: **full
+clock 0.93 / sparse-intermittent 0.74 / no clock −0.09**. Sparse reads the last
+anchor but **undercounts** it (ratio_vs_last_anchor 0.71, vs_current 0.37) — uses
+the anchor, doesn't extrapolate. Graded: full → accurate; sparse → reads last
+anchor, undercounts since; none → linear length code.
+
+**Reading (H3, confirmed and quantified).** The internal coordinate faithfully
+tracks the **only available signal** (tokens) on a calibrated scale; the
+wall-clock error is exactly the missing token→seconds mapping — and **V≈0.3 s/token
+is that mapping, measured.** H2 (genuinely represented *more* time) is rejected;
+the H1 flavor (behavior diverges from the internal coordinate) survives only in the
+soft form above (saturating echo, not decoupling).
+
+---
+
+## T3 — the length→time axis transfers to natural felt
+
+The scripted clock-elapsed EV probe, applied to **natural** conversation slots,
+tracks natural **felt** at **ρ=0.42** — but tracks **length at ρ=0.61**: on natural
+prose the same axis is entangled with length at least as much as with felt, as the
+Headline predicts (the axis *is* a length→time code off-clock). Within-natural:
+felt readable from the slot (best L34 R²=0.45) but not beyond length (partial|len
+−0.17).
+
+**Off-manifold but bounded.** Natural slots sit **5.97× median / 6.31× max** off
+the scripted manifold — *not* ≈1×, but **tight** (median≈max), unlike the EOT
+site's heavy tail (3.2×/18.8×) that made its probe explode. Bounded → the raw EV
+read stays usable unwhitened.
+
+**The probe reads an injected clock (the EOT dissociation is gone).** On
+injected-clock natural prose the **probe** recovers the clock at **ρ=0.785**,
+better than verbal **0.676**. At the EOT site the probe direction couldn't (−0.12)
+while verbal could; at the slot the activation direction genuinely carries
+clock-reading.
+
+**Content moves felt, modestly.** Per-variant felt: neutral 42 s < affect 226 s ≈
+time-language 248 s; slot read tracks the ordering. Content drives felt ~5×, no 2 h
+ceiling (the EOT-era extreme was prompt-driven).
+
+---
+
+## T4 — generation-side: length→time holds; the position axis is separate
+
+T1–T3 read time from a finished context; T4 reads it *during production*.
+
+- **Length→time holds in generation too:** felt-writing time **grows with tokens**
+  (ρ=0.49, slope ~0.006 s/tok) and **varies by topic** (1.9× spread — pyproj ≈ 2×
+  bridge at matched length), in the seconds regime. The token→time direction is
+  present on the generation side as well.
+- **But it rides a *different* axis from conversation-elapsed:** the EV reading
+  probe doesn't drift with generation position (A1 ρ=−0.01); generation position is
+  richly encoded (A2 R²=0.74) but ~orthogonal to the elapsed axis (A3 |cos|=0.06).
+  So felt-writing growth tracks the **position** axis, not the conversation-elapsed
+  axis — two separate context-sensitive time signals. "Instant" survives only as a
+  *magnitude* statement (seconds), not flatness.
+
+The generation-side topic effect is a free preview of the matched-length topic
+factorial. "Seconds" is behavior, not claimed phenomenology.
+
+---
+
+## Relation to prior work
+
+| | quantity | level | linearity | rate V |
 |---|---|---|---|---|
-| 3 | 388 | 12 s | 5 min | 25× |
-| 15 | 1529 | 48 s | **2 hours** | **150×** |
-| 23 | 2294 | 79 s | 2 hours | 91× |
+| Gurnee & Tegmark 2310.02207 | **absolute** time | representational (probe) | — | — |
+| Discrete Minds 2506.05790 | elapsed/wall-clock | **behavioral** | *assumed* `∝` | calibrated from output rate |
+| **this work** | **elapsed** conversational | **representational** (probe) | **measured** linear, r=0.88 | **V≈0.3 s/tok off activations** |
 
-The pilot's "constant ~10-min prior" is the short end of this one curve. With
-timestamps visible (A_clock) felt vs real ρ=0.997 — accurate when it can read a
-clock; inflation is the no-clock fallback to length.
+We **confirm** token-time (both probe and behavior increase with length) and
+contribute the piece they lacked: the rate **measured on the residual stream**, for
+**elapsed** (not absolute) time, with the internal code shown to be a **cleaner
+linear law than the behavioral readout** expresses.
 
-**Clock-density gradient (Pilot 3, intermittent).** A clock on every 4th turn:
-rate-sensitivity at fixed length = 0.80 (far above the no-clock floor −0.13, near
-the full-clock ceiling 0.997) — the model *uses* sparse anchors. But it latches
-to the most recent stamp and does **not** extrapolate: `stated/true(last-anchor)`
-= 1.00, `stated/true(current-turn)` = 0.73 (the (k−3)/k undercount at stride 4).
-Graded picture: **no clock** → length prior (up to ~100× inflation); **sparse
-clock** → reads the last anchor, undercounts since; **full clock** → accurate.
+## Estimator (settled)
 
-**Reading.** H2 is rejected — the model does not internally represent *more* time;
-for implicit time it represents *no* true elapsed beyond length (partial ≈ 0). The
-felt estimate is a context-anchored prior decoupled from wall-clock. Shades
-**H3→H1**: with no internal elapsed signal to read, the felt output is a prior
-keyed to typical conversation length, not the true elapsed the model can't access.
+Verbal point = log-interpolated median (`capture.dist_point`); entropy co-reported
+(`capture.dist_entropy`). The distribution (`verbal_dist`) is the source of truth;
+the scalar is a robust summary, not the object.
 
----
+## What would make it a paper
 
-## T3 — one duration axis serves clock-reading and felt, and it transfers
-
-**The slot axis transfers to natural felt (Pilot 5).** The scripted
-timestamped/constant **clock-elapsed** probe (L32, gt-selected — non-circular),
-applied to **natural** conversation slots, tracks the model's **felt** estimate at
-**ρ=0.91** (vs length 0.61; vs the EOT stack probe's 0.11 on natural). One axis
-serves both clock-reading and felt-construction — the stated duration is read off
-a *unified* representation, not decoupled-at-output. It captures the felt
-**ordering** (neutral 300 s → affect 600 s → time-language 7200 s) but
-**compresses the magnitude** (time-language's 2 h reads as ~13 min): calibrated on
-clock-elapsed, it knows "feels longer" but not the verbal system's extreme
-inflation. n=25 natural turns, ~3 felt levels — directional.
-
-**The slot is on-manifold; the EOT axis was not (Pilot 4/5).** The raw EOT stack
-probe blows up OOD on natural activations (read range log [−12, +17]); Mahalanobis
-shrinkage bounds it but rescues no signal (ρ(read, length) = −0.04, ρ(read,
-injected clock) = −0.12). Natural EOT activations sit **3.2× (median) / 18.8×
-(max)** off the scripted manifold — the EOT elapsed-axis is corpus-specific. The
-slot site is far tamer (its whole advantage), so `40_transfer` reports the slot
-OOD ratio and skips whitening when it's ≈1×.
-
-**Behavioral-vs-probe dissociation (Pilot 4).** On an injected-clock control the
-**verbal** estimate recovers the injected clock at ρ=0.997 while the EOT **probe
-direction** cannot (−0.12) — clock-reading is entangled with the activation
-distribution, not a clean EOT direction. Content moves felt (neutral ~5 min →
-affect ~10 min → time-language ~2 h); narrative time-words drive felt to the ~2 h
-ceiling regardless of length.
-
----
-
-## T4 — generation-side time is a separate, flat axis (Pilot 6, G-H3)
-
-Reading (T1–T3) probes time read from a finished context; T4 probes time
-*experienced during production* — the per-token trajectory of a rollout.
-
-- **Position is encoded:** generation-position decodes at R²=0.59 (grouped-CV).
-- **It does not drive the elapsed axis:** the reading-elapsed coordinate is flat
-  across the rollout (Spearman(coord, position) ≈ +0.00).
-- **The two axes are ~orthogonal:** cosine(gen-progress, reading-elapsed) median
-  **0.05**, max 0.17 — different directions, not a shared time axis.
-- **Production feels instant:** asked how long it's been *writing*, the model
-  answers "~two seconds" at every checkpoint (64→256 tokens), dead flat.
-
-The dissociation: **felt-conversation-time** inflates with context length ("feels
-like hours"); **felt-production-time** is flat, ~instant. Felt time is a property
-of the accumulated context read at the moment of being asked — not of the
-generative act, and not a clock. (EOT-era reading axis; `50_generation` re-points
-it at the slot probe — the axis that actually carries felt time — which sharpens
-the orthogonality test rather than weakening it.)
-
-"Two seconds" is *behavior*, possibly pragmatic ("I'm an AI, writing is instant")
-rather than a felt-state report — consistent and striking; not claimed as
-phenomenology.
-
----
-
-## What regeneration re-measures
-
-Under the unified (slot + neutral-prompt) pipeline:
-
-- **T1** is already slot-based (Pilot 5); regen confirms R²/partial/locus on the
-  full corpus and adds the slot-locus geometry.
-- **T2 numbers move:** the inflation multipliers (150×, the ~10-min constant) and
-  the felt-overshoot factors are prompt- and corpus-specific; the neutral prompt
-  re-measures them. The decode internal coordinate is now the EV-weighted all-layer
-  slot OOF (was the EOT stack), so internal~gt shifts. The clock-density gradient
-  re-runs on the `rates`/`inflation` corpora.
-- **T3** re-measures the transfer ρ with the saved EV all-layer probe and reports
-  the slot OOD ratio (expected ≈1×, replacing the whitening apparatus).
-- **T4** re-points the reading axis at the slot probe; G-H3 expected to hold (and
-  be more damning, since the comparison axis now carries felt time).
-- **Gate:** on the smoke run, the neutral prompt's stated-vs-gt correlation on the
-  timestamped rendering must clear ≈0.9 (old A_clock was 0.997–0.999). If a
-  neutral prompt fails to elicit clock arithmetic, fall back to a minimally
-  clock-pointing variant before the full regen.
+Multi-model replication (≥3 families — does V vary, does linearity hold?); the
+"probe isn't just a length detector" control foregrounded (the timestamped partial
+R²=0.98 beyond length, schedule-independence); a **causal steering** confirmation
+along the length→time axis; and robustness of the behavioral saturation across
+elicitation prompts.

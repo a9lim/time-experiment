@@ -12,8 +12,9 @@ time-language ~hours). So:
            gt-selected, non-circular) to natural slots — does its read track
            natural FELT, or only length? One axis for clock-reading and felt.
   OOD    — how far natural slots sit off the scripted manifold (Mahalanobis
-           ratio). The slot's advantage over the EOT site: if ≈1×, no whitening
-           is needed (the EOT site was 3.2×/18.8× and needed shrinkage).
+           ratio). The slot sits ~6× off but *tightly* (median≈max); the EOT
+           site's 3.2×/18.8× heavy tail made its probe explode, the slot's
+           bounded offset doesn't — so the raw EV read stays usable unwhitened.
   Control— injected clock on natural prose: does the verbal recover it, and does
            the slot-probe read recover it? (the behavioral-vs-probe dissociation)
   Content— per-variant felt + slot-read medians (ordering vs magnitude).
@@ -132,7 +133,7 @@ def main() -> None:
         med, mx = maha_ratio(ds["X3d"], layers, Xn)
         out["ood_ratio_median"], out["ood_ratio_max"] = med, mx
         print(f"[OOD] natural slot off-manifold: median {med:.2f}x, max {mx:.2f}x  "
-              f"(EOT site was 3.2x/18.8x; ≈1 -> no whitening needed)")
+              f"(bounded: median≈max; EOT was 3.2x/18.8x heavy-tailed -> its probe blew up)")
 
     # Control — injected clock on natural prose (timestamped natural).
     di = assemble(rows, cache, source="natural", rendering="timestamped",

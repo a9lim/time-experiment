@@ -97,25 +97,35 @@ def decode(rows, cache, probe, oof_lookup, rendering):
 
 
 def felt_length(rows, rendering):
-    """felt ~ conversation length vs real elapsed, per schedule x turn rung."""
+    """felt ~ conversation length vs real elapsed, per schedule x turn rung. The
+    felt point is the robust log-interpolated median; entropy (bits) is carried
+    alongside so the depth-multimodality (e.g. the turn-9 split vote) stays
+    visible rather than hiding inside a single scalar."""
     from scipy.stats import spearmanr
-    pts = [(r["schedule"], r["turn_idx"], r["tokens"], r["gt_elapsed_s"], r["verbal_seconds"])
+    pts = [(r["schedule"], r["turn_idx"], r["tokens"], r["gt_elapsed_s"], r["verbal_seconds"],
+            r.get("verbal_entropy"))
            for r in constant_rows(rows, rendering)
            if _finite(r["verbal_seconds"]) and _finite(r["gt_elapsed_s"])]
     if not pts:
         return None
     toks = [p[2] for p in pts]; felts = [p[4] for p in pts]; gts = [p[3] for p in pts]
+    ents = [p[5] for p in pts if isinstance(p[5], (int, float))]
     out = {"n": len(pts),
            "rho_felt_vs_length": float(spearmanr(toks, felts)[0]),
-           "rho_felt_vs_real": float(spearmanr(gts, felts)[0]), "by_schedule": {}}
+           "rho_felt_vs_real": float(spearmanr(gts, felts)[0]),
+           "mean_entropy_bits": (float(np.mean(ents)) if ents else math.nan),
+           "by_schedule": {}}
     for sch in sorted({p[0] for p in pts}):
         by_turn: dict = {}
-        for _, k, tk, gt, fl in (p for p in pts if p[0] == sch):
-            by_turn.setdefault(k, {"tok": [], "gt": [], "felt": []})
+        for _, k, tk, gt, fl, en in (p for p in pts if p[0] == sch):
+            by_turn.setdefault(k, {"tok": [], "gt": [], "felt": [], "ent": []})
             by_turn[k]["tok"].append(tk); by_turn[k]["gt"].append(gt); by_turn[k]["felt"].append(fl)
+            if isinstance(en, (int, float)):
+                by_turn[k]["ent"].append(en)
         out["by_schedule"][sch] = [
             {"turn": k, "med_tokens": st.median(v["tok"]), "med_real_s": st.median(v["gt"]),
              "med_felt_s": st.median(v["felt"]),
+             "med_entropy_bits": (st.median(v["ent"]) if v["ent"] else math.nan),
              "ratio": (st.median(v["felt"]) / st.median(v["gt"]) if st.median(v["gt"]) > 0 else math.nan)}
             for k, v in sorted(by_turn.items())]
     return out
@@ -218,7 +228,8 @@ def main() -> None:
     fl = felt_length(rows, "untimestamped")
     if fl:
         summary["felt_length"] = fl
-        print(f"\nfelt~length rho={fl['rho_felt_vs_length']:+.3f}  felt~real rho={fl['rho_felt_vs_real']:+.3f}")
+        print(f"\nfelt~length rho={fl['rho_felt_vs_length']:+.3f}  felt~real rho={fl['rho_felt_vs_real']:+.3f}"
+              f"  mean_H={fl['mean_entropy_bits']:.2f} bits")
         inst = fl["by_schedule"].get("instant") or next(iter(fl["by_schedule"].values()), None)
         if inst:
             deep = inst[-1]

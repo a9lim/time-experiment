@@ -122,8 +122,9 @@ def fig_t2(M, fdir):
         tok = tok[order]
         internal = np.array([float(r["internal_s"]) for r in un])[order]
         verbal = np.array([float(r["verbal_s"]) if r["verbal_s"] else np.nan for r in un])[order]
-        gt = np.array([float(r["gt_s"]) for r in un])[order]
-        axes[2].scatter(tok, gt, s=14, color=C_REAL, alpha=0.35, label="true elapsed")
+        # true elapsed intentionally omitted: this panel is the model's subjective
+        # internal/verbal time vs context length, where wall-clock gt (decoupled by
+        # the gap schedule) is not the reference of interest.
         axes[2].scatter(tok, internal, s=16, color=C_INT, alpha=0.7, label="probe (internal)")
         axes[2].scatter(tok, verbal, s=16, color=C_VERB, alpha=0.7, label="verbal (felt)")
         for y, c in ((internal, C_INT), (verbal, C_VERB)):  # light log-log trend lines
@@ -178,6 +179,37 @@ def fig_t3(M, fdir):
     plt.close(fig); print(f"saved -> {fdir}/fig_t3_transfer.png")
 
 
+def fig_probe_linear(M, fdir):
+    """Probe-read felt time vs context length on LINEAR axes (no-clock slots).
+    The probe's internal elapsed read lives in log coordinates; a linear-axis view
+    tests whether it grows linearly (or saturates) in raw seconds with length.
+    Coloured by schedule — under no clock the read should not separate by the
+    (invisible) narrated schedule, only by length."""
+    from scipy.stats import pearsonr
+    recs = _load_csv(M.data_dir / "decode_rows.csv")
+    un = [r for r in recs if r["rendering"] == "untimestamped"]
+    if not un:
+        return
+    tok = np.array([float(r["tokens"]) for r in un])
+    internal = np.array([float(r["internal_s"]) for r in un])
+    fig, ax = plt.subplots(figsize=(7.2, 5))
+    for sch in sorted({r["schedule"] for r in un}):
+        m = np.array([r["schedule"] == sch for r in un])
+        ax.scatter(tok[m], internal[m], s=20, alpha=0.6, label=sch)
+    b = np.polyfit(tok, internal, 1)
+    r = float(pearsonr(tok, internal)[0])
+    xs = np.array([tok.min(), tok.max()])
+    ax.plot(xs, np.polyval(b, xs), "-", color=C_REAL, lw=1.8,
+            label=f"linear fit: {b[0]:.3f} s/tok, r={r:.2f}")
+    ax.set_ylim(0, float(np.percentile(internal, 98)) * 1.1)
+    ax.set_xlabel("context length (tokens)")
+    ax.set_ylabel("probe-read felt time (s, linear axis)")
+    ax.set_title("Probe felt time vs context length (no clock, linear axes)")
+    ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
+    fig.tight_layout(); fig.savefig(fdir / "fig_probe_vs_length_linear.png", dpi=140, bbox_inches="tight")
+    plt.close(fig); print(f"saved -> {fdir}/fig_probe_vs_length_linear.png")
+
+
 def main() -> None:
     M = current_model()
     fdir = M.figures_dir
@@ -185,6 +217,7 @@ def main() -> None:
     fig_t1(M, fdir)
     fig_t2(M, fdir)
     fig_t3(M, fdir)
+    fig_probe_linear(M, fdir)
     print(f"\nfigures -> {fdir}/  (T4: run 50_generation.py)")
 
 

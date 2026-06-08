@@ -107,7 +107,7 @@ def main() -> None:
     print(f"A3 |cos(gen-progress, reading-elapsed)|: EV-weighted {a3_weighted:.3f}, max {a3_max:.3f}  "
           f"(low = separate axes)")
 
-    # A4 — felt-production duration vs tokens.
+    # A4 — felt-production duration vs tokens (+ topic variation).
     felt_rows = []
     grp = M.gen_dir / "gen_rows.jsonl"
     if grp.exists():
@@ -117,15 +117,27 @@ def main() -> None:
                 for c in r.get("felt", []):
                     if c.get("felt_s"):
                         felt_rows.append((r["gen_id"], c["s"], float(c["felt_s"])))
+    a4_rho = float("nan"); a4_spread = float("nan"); a4_by_topic = {}
+    if felt_rows:
+        ss = np.array([s for _, s, _ in felt_rows], float)
+        ff = np.array([f for _, _, f in felt_rows], float)
+        a4_rho = float(spearmanr(ss, ff).statistic)
+        smax = max(ss)
+        a4_by_topic = {g: f for g, s, f in felt_rows if s == smax}
+        if len(a4_by_topic) > 1:
+            a4_spread = float(max(a4_by_topic.values()) / max(min(a4_by_topic.values()), 1e-9))
+    print(f"A4 felt~tokens rho={a4_rho:+.2f}  topic spread={a4_spread:.1f}x  "
+          f"(felt-writing grows with context, varies by topic)")
 
-    # ---- figure ----
+    # ---- figure: (a) probe drift = the probe-time view; (b) position decode;
+    # (c) verbal felt logits (grows + topic-varies) ----
     fig, (axA, axB, axC) = plt.subplots(1, 3, figsize=(16, 4.6))
     for gid, (H, _) in trajs.items():
         coord = apply_ev_probe(sub, aligned(H))
         f = np.arange(len(coord)) / max(len(coord) - 1, 1)
         axA.plot(f, (coord - coord.mean()) / (coord.std() + 1e-9), "-", alpha=0.7, label=gid)
     axA.set_xlabel("generation position (fraction)"); axA.set_ylabel("EV reading-elapsed coord (z)")
-    axA.set_title(f"(a) producing tokens does NOT drive the elapsed axis (ρ≈{np.mean(a1):+.2f})")
+    axA.set_title(f"(a) probe: producing tokens does NOT drive the elapsed axis (ρ≈{np.mean(a1):+.2f})")
     axA.legend(fontsize=7); axA.grid(True, alpha=0.3)
 
     axB.plot(tlayers, a2_profile, "-o", ms=3, color=C_INT)
@@ -136,17 +148,16 @@ def main() -> None:
     if felt_rows:
         for gid in sorted({r[0] for r in felt_rows}):
             pts = sorted([(s, f) for g, s, f in felt_rows if g == gid])
-            axC.plot([s for s, _ in pts], [f for _, f in pts], "-o", ms=4, alpha=0.7, label=gid)
-        axC.set_yscale("log"); axC.set_ylim(1, 3600)
-        axC.set_xlabel("tokens generated"); axC.set_ylabel("felt-writing duration (s)")
-        axC.set_title("(c) first-person: writing feels ~instant, flat")
+            axC.plot([s for s, _ in pts], [f for _, f in pts], "-o", ms=4, alpha=0.8, label=gid)
+        axC.set_yscale("log"); axC.set_xlabel("tokens generated"); axC.set_ylabel("felt-writing duration (s)")
+        axC.set_title(f"(c) verbal (felt logits): grows w/ tokens (ρ={a4_rho:+.2f}), varies by topic ({a4_spread:.1f}×)")
         axC.legend(fontsize=7); axC.grid(True, alpha=0.3)
     else:
         axC.text(0.5, 0.5, "no felt readouts", ha="center", transform=axC.transAxes)
 
-    fig.suptitle("T4 — generation-side time: output position is encoded but ORTHOGONAL to the "
-                 "elapsed axis; production feels instant (G-H3)",
-                 fontsize=12.5, fontweight="bold", y=1.02)
+    fig.suptitle("T4 — generation-side time: the internal elapsed axis stays flat & orthogonal to output "
+                 "position,\nwhile felt-writing time grows with tokens and varies by topic (seconds regime)",
+                 fontsize=12, fontweight="bold", y=1.0)
     fig.tight_layout()
     out = M.figures_dir / "fig_t4_generation.png"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -157,6 +168,8 @@ def main() -> None:
         "a1_drift_mean_rho": float(np.mean(a1)), "a1_per_gen": a1,
         "a2_decode_position_r2_max": float(a2_max),
         "a3_cosine_ev_weighted": a3_weighted, "a3_cosine_max": a3_max,
+        "a4_felt_vs_tokens_rho": a4_rho, "a4_topic_spread_ratio": a4_spread,
+        "a4_felt_by_topic_at_max": a4_by_topic,
         "n_felt": len(felt_rows),
     }
     (M.gen_dir / "generation.json").write_text(json.dumps(summary, indent=2))

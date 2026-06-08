@@ -140,6 +140,34 @@ def capture_slot(session: Any, rendered_text: str) -> tuple[dict[int, np.ndarray
     return states, n_tokens
 
 
+# --- soft-distribution summaries (shared by capture + migration + analyses) ---
+def dist_point(p: np.ndarray) -> float:
+    """Robust point estimate of a grid distribution: the **log-interpolated
+    median** (the 0.5 crossing of the CDF interpolated in log-seconds). Unlike the
+    geometric mean ``exp(Σ p·log s)``, it is not dragged by the spurious multimodal
+    tails the no-clock felt distribution grows at depth — it summarizes a split
+    vote by its central mass, not by a fictitious midpoint between the modes."""
+    p = np.asarray(p, dtype=np.float64)
+    c = np.cumsum(p)
+    j = int(np.searchsorted(c, 0.5))
+    if j <= 0:
+        return float(_GRID_SECONDS[0])
+    if j >= len(_GRID_SECONDS):
+        return float(_GRID_SECONDS[-1])
+    frac = (0.5 - c[j - 1]) / max(c[j] - c[j - 1], 1e-12)
+    return float(math.exp(_GRID_LOG[j - 1] + frac * (_GRID_LOG[j] - _GRID_LOG[j - 1])))
+
+
+def dist_entropy(p: np.ndarray) -> float:
+    """Shannon entropy (bits) of a grid distribution — the spread/uncertainty of
+    the verbal estimate, co-reported so multimodality stays visible in a scalar
+    (a high-entropy felt read is the gentle surfacing of 'I don't have a sense of
+    time' that the soft readout was built to keep, rather than a refusal/NaN)."""
+    p = np.asarray(p, dtype=np.float64)
+    p = p[p > 1e-12]
+    return float(-(p * np.log2(p)).sum())
+
+
 # --- verbal readout (soft duration distribution) -------------------------
 def verbal_distribution(session: Any, messages_with_question: list[dict[str, str]],
                         ) -> tuple[float, np.ndarray]:
@@ -155,9 +183,9 @@ def verbal_distribution(session: Any, messages_with_question: list[dict[str, str
     multi-token candidate scored against a copy of the prefix KV cache (cheap
     continuation forwards, validated identical to brute per-candidate forwards).
 
-    Returns ``(point_seconds, probs)`` — ``point_seconds`` is the expected-log
-    estimate ``exp(Σ p_i log sec_i)``; ``probs`` is the grid distribution (len ==
-    ``DURATION_GRID``) for offline soft analyses (mode/median/spread)."""
+    Returns ``(point_seconds, probs)`` — ``point_seconds`` is the robust
+    log-interpolated median (``dist_point``); ``probs`` is the grid distribution
+    (len == ``DURATION_GRID``) for offline soft analyses (entropy/mode/spread)."""
     tok, model, dev = session.tokenizer, session.model, session.device
     prefix = render(session, messages_with_question, add_generation_prompt=True) + ASSIST_HEAD
     pids = tok(prefix, add_special_tokens=False)["input_ids"]
@@ -189,8 +217,7 @@ def verbal_distribution(session: Any, messages_with_question: list[dict[str, str
         del past
     p = np.exp(logps - logps.max())
     p /= p.sum()
-    point = float(math.exp(float((p * _GRID_LOG).sum())))
-    return point, p
+    return dist_point(p), p
 
 
 # --- elicitation rendering helpers (shared by capture + reverbal) ---------

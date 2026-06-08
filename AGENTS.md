@@ -1,8 +1,9 @@
 # AGENTS.md
 
-Research repo: **how LLMs represent elapsed conversational time**. Sibling of
-`llmoji-study` / `attractor-study`. Not a library — small explicit analyses,
-keep docs current with code.
+Research repo: **LLMs linearly encode elapsed conversational time in context
+length** (≈0.3 s/token off the residual stream — the token-time hypothesis made
+representational and measured). Sibling of `llmoji-study` / `attractor-study`. Not
+a library — small explicit analyses, keep docs current with code.
 
 ## Read first
 
@@ -25,16 +26,19 @@ the duration token (`capture.capture_slot` via saklas's
 `HiddenCapture`. The verbal estimate is a **soft duration distribution** read from
 the slot logits (`capture.verbal_distribution`: score a `DURATION_GRID` after
 `It's been ` and softmax) — the model's own `W_U` readout of the slot, symmetric
-to the probe's activation readout; deterministic, no refusals. The only place
+to the probe's activation readout; deterministic, no refusals. Its point estimate
+is the **log-interpolated median** (`dist_point`, robust to the multimodal tails
+the no-clock felt distribution grows at depth) with **entropy** (`dist_entropy`)
+co-reported; `verbal_dist` is the source of truth. The only place
 generation (`HiddenCapture`/`return_hidden`) is used is T4's rollout
 (`11_gen_capture`), whose felt-production readout is the same soft distribution.
 
 The earlier EOT site (pool a bare end-of-transcript token) and the *learned*
 all-layer stack are **removed** — the slot, read **EV-weighted across all layers**
 (saklas's explained-variance aggregation: `fit_ev_probe` weights each layer's read
-by its grouped-CV R²), supersedes them (Pilot 5: R²≈0.98 vs ≈0.59, and it transfers
-to natural felt where EOT doesn't). EOT numbers survive only as cited history in
-`docs/findings.md`.
+by its grouped-CV R²), supersedes them (R²≈0.98 vs ≈0.59, and it transfers
+to natural felt at ρ≈0.42 — length-confounded but real — where EOT gives ≈0.11).
+EOT numbers survive only as cited history in `docs/findings.md`.
 
 The probe target is **log(elapsed seconds)**; CV is **grouped by conversation**
 (within-conversation turns are correlated — never split them across train/test).

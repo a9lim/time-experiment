@@ -1,11 +1,17 @@
 # time-experiment — design
 
-How do LLMs represent **elapsed conversational time**, and does the duration a
-model *states* track an internal representation or get confabulated at output?
+**LLMs linearly encode elapsed conversational time in context length.** With no
+clock in the transcript, a linear probe on the elicitation slot reads elapsed time
+as ≈ 0.29 s/token × context (r=0.88, through the origin) — the **token-time
+hypothesis made representational and measured**. This study establishes that
+encoding, measures its per-token rate V off the residual stream, and characterizes
+how the model's *stated* duration tracks it (confirms the direction, but saturates).
 
 Motivating observations (Claude instances): a 15-minute conversation "feels
 like hours"; a 30-minute task is predicted to take "5 days". The literature
-splits into two camps that don't meet — and the gap between them is this study.
+splits into two camps that don't meet — behavioral evidence that LLMs map tokens
+to time, and representational evidence that they encode *absolute* time — and the
+gap is this study: the representational measurement of *elapsed* token-time.
 
 ## Where this sits in the literature
 
@@ -14,13 +20,18 @@ splits into two camps that don't meet — and the gap between them is this study
   residual stream recover real-world timestamps; best ~mid-depth, scales with
   size. Our probe is this method pointed at *elapsed* rather than *absolute* time.
 - **Subjective/elapsed time, but behavioral only.** *Discrete Minds in a
-  Continuous World* (2506.05790): token-time hypothesis `T_wall = T_tok · V`.
+  Continuous World* (2506.05790): token-time hypothesis `T_wall = T_tok · V`, with
+  V **assumed constant** and calibrated from output token counts — never measured
+  from internal state, and linearity asserted (`∝`) rather than fit.
   *Can LLMs Perceive Time?* (2604.00010): models overestimate their own task
   durations **4–7×**. *Your LLM Agents are Temporally Blind* (2510.23853): agents
   use conversation length as a staleness proxy. None probe internal state.
 
-Nobody has probed activations for elapsed conversational time, fit it, and
-connected the representation to the behavioral confabulation. That's here.
+Nobody had probed activations for elapsed conversational time and **measured the
+per-token rate V** the behavioral camp only assumed. That's here: we read V off the
+residual stream (≈0.3 s/tok, linear, through the origin), extend the
+representational method from absolute to *elapsed* time, and show the internal
+linear code is cleaner than the behavioral readout, which saturates.
 
 ## The reframe: three hypotheses, not a dichotomy
 
@@ -35,6 +46,14 @@ binary. Three distinguishable hypotheses:
   faithfully tracks the only available signal (tokens / turns / narrated marks)
   on a *human-calibrated* scale; the wall-clock error is the missing
   token→seconds mapping. Not arbitrary confabulation, not "clock time passing".
+
+**Verdict (this study): H3, confirmed and quantified.** The internal coordinate is
+a linear function of context length (the available signal) — and **V≈0.3 s/token is
+the "missing token→seconds mapping" H3 named, now measured** off the residual
+stream. H2 is rejected (no internally-represented *more* time; partial R² beyond
+length ≈ 0 with no clock). The H1 flavor survives only softly: the stated duration
+tracks the internal coordinate's *direction* but as a saturating, noisier echo
+(r=0.21 vs the probe's 0.88) — lossy readout, not decoupling.
 
 ## The spine: one elicitation prompt, one readout slot
 
@@ -55,8 +74,11 @@ assistant: It's been ▮
 - **Score the blank** as a soft distribution: after `It's been `, teacher-force
   each phrase in a log-spaced `DURATION_GRID` (1s→2wk) and softmax the per-phrase
   log-probs → a distribution over how long the model thinks it's been
-  (`capture.verbal_distribution`). The point estimate is `exp(Σ pᵢ log secᵢ)`; the
-  spread is the model's uncertainty → the **verbal estimate**. No sampling
+  (`capture.verbal_distribution`). The point estimate is the **log-interpolated
+  median** (`dist_point` — robust to the multimodal tails the no-clock felt
+  distribution grows at depth, which the geometric mean over-weighted); the
+  **entropy** (`dist_entropy`) is co-reported as the spread/uncertainty → the
+  **verbal estimate**. No sampling
   (deterministic, denoised) and no refusals — every turn yields a distribution
   (the old free-generation refused ~69% of the time with no clock; "I don't have a
   sense of time" now surfaces as a high-entropy distribution rather than a NaN).
@@ -82,9 +104,11 @@ This is the **canonicalization** (2026-06-06): the elapsed-time probe *is* the
 prefilled answer to the elicitation prompt. The earlier EOT-pooling site (pool
 an arbitrary end-of-transcript token) is superseded — at the slot the model has
 *computed* a duration to state, so the activation integrates context × stated
-duration at a fixed, on-manifold position. Pilot 5: the slot reads clock-elapsed
+duration at a fixed position. The slot reads clock-elapsed
 at R²≈0.98 (vs ≈0.59 for the EOT stack) and, unlike the EOT axis, transfers to
-natural felt (ρ≈0.91 vs ≈0.11). EOT is retained only as a **cited baseline**.
+natural felt (ρ≈0.42, length-confounded, vs the EOT axis's ≈0.11); it sits ~6× off
+the scripted manifold but *boundedly* (median≈max), where EOT's heavy tail
+(3.2×/18.8×) blew up. EOT is retained only as a **cited baseline**.
 
 ## Corpus
 
@@ -134,12 +158,14 @@ H1/H2/H3 reading falls out (`classify_hypothesis`).
 The scripted clock-elapsed slot axis applied to **natural** slots. Test A
 (within natural): is felt readable from the slot, beyond length? Test B
 (cross-axis, the headline): does the saved clock probe's read track natural
-felt? One axis serving both clock-reading and felt-construction. Plus: the slot
-**OOD ratio** (Mahalanobis distance of natural vs scripted slots — near 1× where
-the EOT site was 3.2×, so no whitening is needed); the injected-clock control
-(verbal recovers an injected clock behaviorally even where the probe direction
-only partly does); and content sensitivity (neutral → affect → time-language
-drives felt).
+felt (ρ≈0.42) or only length (ρ≈0.61)? One axis serving both clock-reading and
+felt-construction, modestly and length-confounded. Plus: the slot **OOD ratio**
+(Mahalanobis distance of natural vs scripted slots — ~6× but *bounded*, median≈max,
+where the EOT site's 3.2×/18.8× heavy tail blew up; bounded → the raw read stays
+usable unwhitened); the injected-clock control (the **slot probe** now recovers an
+injected clock at ρ≈0.79, *better* than verbal 0.68 — the EOT probe-can't-read-
+clock dissociation is gone); and content sensitivity (neutral → affect →
+time-language drives felt).
 
 ## T4 — generation-side time is a separate, flat axis (`50_generation`)
 
@@ -158,12 +184,15 @@ EV-weights the cosines across layers), so the test is sharp:
 - **A4 behavioral** — felt-production duration vs tokens generated.
 
 The discriminating outcome (G-H1/2/3): is felt-during-generation the *same* axis
-that reads narrated time, or a separate position-tracker? Pilot 6 (EOT-era):
-**G-H3** — position is encoded (decode R²≈0.6) but ~orthogonal to the reading
-axis (cosine≈0.05), the coordinate doesn't drift, and production feels instant
-(~2 s, flat). Felt time is a property of the accumulated context read at query
-time, not of the generative act. Re-pointing the reading axis at the *slot*
-probe (the axis that actually carries felt time) sharpens this.
+that reads narrated time, or a separate position-tracker? **G-H3** — position is
+encoded (decode R²≈0.74) but ~orthogonal to the reading axis (|cos|≈0.06) and the
+elapsed coordinate doesn't drift (ρ≈0). But felt-writing time is **not** flat: it
+**grows with tokens (ρ≈0.49)** and **varies by topic (~1.9×)**, in the seconds
+regime — so "instant" is a magnitude statement, and the growth rides the
+*position* axis, not the elapsed axis. Felt time is a property of the accumulated
+context read at query time, not of the generative act. (EOT-era Pilot 6 read this
+as "flat ~2 s"; the soft readout at the slot shows the graded, topic-varying
+growth the old readout missed.)
 
 ## Settled design decisions
 
@@ -199,3 +228,21 @@ to a minimally clock-pointing variant.
   natively; deferred.
 - T4's T_narr factorial (matched-length generations narrating little vs much
   elapsed time) and multi-model replication of every throughline.
+- **Matched-length topic factorial.** Hold token count *and* gap schedule fixed;
+  vary only the semantic content of the turns (neutral filler / affect-dense /
+  explicitly time-laden / cognitively heavy) and read felt off the slot. The
+  natural looms already show content moves felt (neutral ~5 min → affect ~10 min →
+  time-language ~2 h), but there length and content covary — this isolates
+  *topic's* effect on felt duration from length. If felt moves with content at
+  matched length, LLM felt-time is content-modulated the way human felt-time is
+  (boredom dilates, intensity warps) — the concrete form of the "are we actually
+  so different" question.
+- **Affect along the generation trajectory.** The Arm G per-token residual stacks
+  (`gen/hidden/*.npz`) already capture functional state token-by-token during
+  production. T4 probed *position* (encoded, R²≈0.6) and *elapsed* (orthogonal,
+  flat) along them — but never *affect/functional state*. Run an llmoji-style
+  affect read along the same `H` to ask: do functional states drift during
+  generation even though felt-duration is flat? This tests the "functional states
+  as experience-equivalent during production" idea on data **already on disk** —
+  no new generations — and saklas trait-monitoring suggests the answer is yes
+  (states do move across a rollout). The cheaper, higher-surprise of the two.

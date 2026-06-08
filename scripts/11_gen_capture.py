@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from saklas import SamplingConfig, SaklasSession  # noqa: E402
 
 from time_experiment.capture import (  # noqa: E402
-    release_memory, render, verbal_distribution,
+    dist_entropy, release_memory, render, verbal_distribution,
 )
 from time_experiment.config import current_model  # noqa: E402
 
@@ -111,7 +111,8 @@ def main() -> None:
                         {"role": "assistant", "content": partial},
                         {"role": "user", "content": FELT_Q}]
                 fs, fdist = verbal_distribution(session, msgs)
-                felt.append({"s": s, "felt_s": fs, "felt_dist": [round(float(x), 5) for x in fdist]})
+                felt.append({"s": s, "felt_s": fs, "felt_entropy": round(dist_entropy(fdist), 4),
+                             "felt_dist": [round(float(x), 5) for x in fdist]})
                 release_memory(session.device)
             rows.append({"gen_id": gid, "n_tokens": int(T), "layers": layers, "felt": felt})
             release_memory(session.device)

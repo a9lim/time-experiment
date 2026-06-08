@@ -1,8 +1,11 @@
 # time-experiment
 
-Probing how LLMs represent **elapsed conversational time** — and whether the
-duration a model *states* tracks an internal representation or is confabulated
-at output. Sibling of `llmoji-study` / `attractor-study`.
+**LLMs linearly encode elapsed conversational time in context length.** A linear
+probe on the elicitation slot reads elapsed as ≈0.3 s/token off the residual stream
+(r=0.88, through the origin) — the token-time hypothesis made representational and
+measured. This repo establishes that encoding and characterizes how the model's
+*stated* duration tracks it (confirms the direction, saturates). Sibling of
+`llmoji-study` / `attractor-study`.
 
 The elapsed-time probe is canonicalized as the **prefilled answer to a time
 elicitation prompt**: ask "roughly how long has this been going on?", prefill

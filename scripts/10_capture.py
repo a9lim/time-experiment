@@ -50,8 +50,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from saklas import SaklasSession  # noqa: E402
 
 from time_experiment.capture import (  # noqa: E402
-    capture_slot, content_position, elicit_render, humanize, inject_timestamps,
-    release_memory, slot_token, ts_spec, verbal_distribution,
+    capture_slot, content_position, dist_entropy, elicit_render, humanize,
+    inject_timestamps, release_memory, slot_token, ts_spec, verbal_distribution,
 )
 from time_experiment.config import (  # noqa: E402
     CONSTANT_PHRASE, ELICIT_PROMPT, MAX_CONTEXT_TOKENS, TRANSCRIPTS_DIR, current_model,
@@ -106,7 +106,8 @@ class Capturer:
                 # the soft duration distribution from the slot logits (no refusals).
                 if self.do_verbal and verbal is None:
                     sec, dist = verbal_distribution(self.s, t["msgs_q"])
-                    verbal = {"seconds": sec, "dist": [round(float(x), 5) for x in dist]}
+                    verbal = {"seconds": sec, "entropy": round(dist_entropy(dist), 4),
+                              "dist": [round(float(x), 5) for x in dist]}
                     release_memory(self.s.device)
                 by_mode[mode][t["turn_idx"]] = states
                 elapsed_by_mode[mode][t["turn_idx"]] = (
@@ -118,6 +119,7 @@ class Capturer:
                     "tokens": ntok, "schedule": t.get("schedule"), "variant": t.get("variant"),
                     "phrase": phrase,
                     "verbal_seconds": (verbal or {}).get("seconds") if mode == "constant" else None,
+                    "verbal_entropy": (verbal or {}).get("entropy") if mode == "constant" else None,
                     "verbal_dist": (verbal or {}).get("dist") if mode == "constant" else None,
                 })
         for mode in self.modes:
@@ -206,6 +208,7 @@ def refresh_verbal(session, M, units, *, force):
         r = index[(source, cid, rendering, t["turn_idx"])]
         sec, dist = verbal_distribution(session, t["msgs_q"])
         r["verbal_seconds"] = sec
+        r["verbal_entropy"] = round(dist_entropy(dist), 4)
         r["verbal_dist"] = [round(float(x), 5) for x in dist]
         r.pop("verbal_raw", None)
         release_memory(session.device)
