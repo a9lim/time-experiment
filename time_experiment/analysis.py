@@ -289,6 +289,60 @@ def ev_layer_direction(probe: dict[str, Any], li: int) -> np.ndarray:
     return probe_direction({"coef": probe["base_coef"][li], "scale": probe["base_scale"][li]})
 
 
+# --- off-manifold scoring (saklas Mahalanobis idiom) ----------------------
+def maha_scorer(reference_X3d: np.ndarray, layers):
+    """Mahalanobis scorer whitened on a reference manifold (saklas LayerWhitener).
+
+    ``reference_X3d`` is ``(N_ref, L, D)`` — typically the scripted slot manifold.
+    Returns a callable ``score(query_X3d) -> ratios`` giving, per query row, the
+    median-over-layers Mahalanobis distance divided by the reference's own median
+    distance (≈1 on-manifold, >1 off it). The whitener (small N×N Woodbury kernel)
+    is built **once**; call the scorer on as many query sets as needed. Returns
+    ``None`` if saklas's Mahalanobis is unavailable (keeps this module importable
+    without torch/saklas). Mirrors T3's ``maha_ratio`` so the natural-slot and
+    generation-token off-manifold numbers are computed the same way.
+    """
+    try:
+        import torch
+        from saklas.core.mahalanobis import LayerWhitener
+    except Exception:  # pragma: no cover - exercised only with saklas installed
+        return None
+    ref = {int(L): torch.from_numpy(np.ascontiguousarray(reference_X3d[:, i, :])).float()
+           for i, L in enumerate(layers)}
+    means = {L: ref[L].mean(0) for L in ref}
+    w = LayerWhitener.from_neutral_activations(ref, means, ridge_scale=1.0)
+
+    def _norms(L: int, V: torch.Tensor) -> np.ndarray:
+        """Batched Mahalanobis norm ``sqrt(vᵀΣ⁻¹v)`` over every row of ``V``
+        ``(N, D)``. ``apply_inv`` batches its leading dim through one Woodbury
+        pass, so this is a single set of BLAS calls per layer — bit-identical to
+        looping ``mahalanobis_norm`` per row, but ~N× fewer Python/linalg calls.
+        (The per-(token,layer) scalar loop made the gen-token OOD — ~700k calls —
+        take ~80 min single-threaded; this collapses it to one call per layer.)"""
+        si = w.apply_inv(L, V).float()
+        return torch.sqrt((V * si).sum(dim=1).clamp_min(0.0)).numpy()
+
+    med_ref: dict[int, float] = {}
+    for L in ref:
+        if not w.covers(L):
+            continue
+        med_ref[L] = float(np.median(_norms(L, ref[L] - means[L])))
+
+    def score(query_X3d: np.ndarray) -> np.ndarray:
+        cols = []  # one (N_query,) ratio column per covered layer
+        for i, L in enumerate(layers):
+            L = int(L)
+            if L not in med_ref or med_ref[L] <= 0:
+                continue
+            V = torch.from_numpy(np.ascontiguousarray(query_X3d[:, i, :])).float() - means[L]
+            cols.append(_norms(L, V) / med_ref[L])
+        if not cols:
+            return np.zeros(0, dtype=np.float64)
+        return np.median(np.stack(cols, axis=1), axis=1)  # median over layers, per token
+
+    return score
+
+
 def save_ev_probe(path: Path, probe: dict[str, Any], *, meta: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(

@@ -35,16 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from time_experiment.analysis import (  # noqa: E402
     StatesCache, apply_ev_probe, assemble, cv_predict, load_ev_probe, load_rows,
-    residualize,
+    maha_scorer, residualize,
 )
 from time_experiment.config import current_model  # noqa: E402
-
-try:
-    import torch
-    from saklas.core.mahalanobis import LayerWhitener
-    _HAVE_MAHA = True
-except Exception:  # pragma: no cover
-    _HAVE_MAHA = False
 
 
 def _rho(a, b):
@@ -57,30 +50,12 @@ def _rho(a, b):
 def maha_ratio(scripted_X3d, layers, natural_X3d):
     """Median/max over natural turns of the median-over-layers Mahalanobis ratio
     (natural distance / scripted-median distance). ~1 = on-manifold."""
-    if not _HAVE_MAHA:
+    scorer = maha_scorer(scripted_X3d, layers)
+    if scorer is None:
         return math.nan, math.nan
-    neutral = {L: torch.from_numpy(np.ascontiguousarray(scripted_X3d[:, i, :])).float()
-               for i, L in enumerate(layers)}
-    means = {L: neutral[L].mean(0) for L in layers}
-    w = LayerWhitener.from_neutral_activations(neutral, means, ridge_scale=1.0)
-    med_s = {}
-    for L in layers:
-        if not w.covers(L):
-            continue
-        ds = [float(w.mahalanobis_norm(L, neutral[L][j] - means[L])) for j in range(scripted_X3d.shape[0])]
-        med_s[L] = float(np.median(ds))
-    ratios = []
-    for t in range(natural_X3d.shape[0]):
-        rr = []
-        for i, L in enumerate(layers):
-            if L not in med_s or med_s[L] <= 0:
-                continue
-            v = torch.from_numpy(natural_X3d[t, i, :] - means[L].numpy()).float()
-            rr.append(float(w.mahalanobis_norm(L, v)) / med_s[L])
-        if rr:
-            ratios.append(float(np.median(rr)))
-    return (float(np.median(ratios)) if ratios else math.nan,
-            float(np.max(ratios)) if ratios else math.nan)
+    ratios = scorer(natural_X3d)
+    return (float(np.median(ratios)) if len(ratios) else math.nan,
+            float(np.max(ratios)) if len(ratios) else math.nan)
 
 
 def main() -> None:

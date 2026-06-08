@@ -29,7 +29,6 @@ unit-testable without torch); it's re-exported here for convenience.
 
 from __future__ import annotations
 
-import copy
 import gc
 import math
 import random
@@ -199,6 +198,7 @@ def verbal_distribution(session: Any, messages_with_question: list[dict[str, str
     with torch.inference_mode():
         po = model(torch.tensor([pids], device=dev), use_cache=True)
         past = po.past_key_values
+        prefix_len = len(pids)
         last_lp = torch.log_softmax(po.logits[0, -1].float(), dim=-1).cpu()
         logps = np.full(len(cand_ids), -1e30, dtype=np.float64)
         for i, cids in enumerate(cand_ids):
@@ -206,11 +206,16 @@ def verbal_distribution(session: Any, messages_with_question: list[dict[str, str
                 continue
             s = float(last_lp[cids[0]])
             if len(cids) > 1:
-                past_c = copy.deepcopy(past)
+                # Continue from the SHARED prefix cache in place, then crop the
+                # appended K/V back to the prefix so the next candidate reuses the
+                # prefix-only cache. Bit-identical to a per-candidate deepcopy (each
+                # candidate sees prefix + only its own tokens) but skips copying the
+                # whole prefix cache ~16x/call — the MPS allocator-thrash hot spot.
                 co = model(torch.tensor([cids], device=dev),
-                           past_key_values=past_c, use_cache=True)
+                           past_key_values=past, use_cache=True)
                 lp = torch.log_softmax(co.logits[0].float(), dim=-1).cpu()
-                del co, past_c   # free this candidate's cache copy before the next (MPS)
+                del co
+                past.crop(prefix_len)
                 for j in range(len(cids) - 1):
                     s += float(lp[j, cids[j + 1]])
             logps[i] = s
