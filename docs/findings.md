@@ -142,23 +142,33 @@ ceiling (the EOT-era extreme was prompt-driven).
 
 ---
 
-## T4 — generation-side: length→time holds; the position axis is separate
+## T4 — generation-side: the elapsed axis is read at query time, not written during production
 
-T1–T3 read time from a finished context; T4 reads it *during production*.
+T1–T3 read time from a finished context; T4 asks whether *producing* tokens writes
+the same axis. Two reads of one rollout (5 prompts × 3 seeds, 768 tok) dissociate:
 
-- **Length→time holds in generation too:** felt-writing time **grows with tokens**
-  (ρ=0.49, slope ~0.006 s/tok) and **varies by topic** (1.9× spread — pyproj ≈ 2×
-  bridge at matched length), in the seconds regime. The token→time direction is
-  present on the generation side as well.
-- **But it rides a *different* axis from conversation-elapsed:** the EV reading
-  probe doesn't drift with generation position (A1 ρ=−0.01); generation position is
-  richly encoded (A2 R²=0.74) but ~orthogonal to the elapsed axis (A3 |cos|=0.06).
-  So felt-writing growth tracks the **position** axis, not the conversation-elapsed
-  axis — two separate context-sensitive time signals. "Instant" survives only as a
-  *magnitude* statement (seconds), not flatness.
-
-The generation-side topic effect is a free preview of the matched-length topic
-factorial. "Seconds" is behavior, not claimed phenomenology.
+- **During production the residual stream doesn't carry the elapsed axis — but the
+  null is off-manifold.** Apply the EV reading probe to each generated token and its
+  coordinate doesn't drift with position (A1 ρ=−0.03). Yet mid-stream tokens sit
+  **18.9× off** the scripted slot manifold (max 42×), so the probe is extrapolating —
+  A1≈0 alone can't carry an orthogonality claim. Position itself is richly encoded
+  (A2 R²=0.86) but ~orthogonal to the elapsed direction (A3 |cos|=0.04).
+- **Fork to the slot and the axis appears.** Cut each partial generation, re-render
+  `ELICIT_PROMPT` + constant prefill, read the same probe at that slot. The fork is
+  **in-domain** — OOD collapses 18.9×→**5.98×** (the T3 natural band) — and the read
+  is a strong, monotone elapsed-vs-position relationship: **ρ=+0.875 ± 0.037, every
+  topic +0.82 to +0.91** (the n=4-checkpoint bridge outlier of −0.13 resolved to +0.91
+  at n=12). The raw-vs-spliced split *is* the evidence: felt time is a property of the
+  accumulated context **read at query time**, not of the generative act.
+- **Self-context is counted, but discounted ~5×.** The recovered slope is **0.06
+  s/tok**, and it stays ~flat (0.047→0.059) when the rollout span quadruples (256→768
+  tok) — a real rate, not range restriction. Against scripted **V≈0.29 s/tok**: an
+  uninterrupted self-generated monologue accrues felt-elapsed at ~**1/5** the rate of
+  externally-timestamped conversation.
+- **Behavioral felt-writing** still grows with tokens (A4 ρ=0.49) and is **topic-
+  driven, not seed-driven** — topic spread **2.46×** (pyproj ≈ 2.5× bridge) ≫
+  within-topic seed dispersion **1.07×** across 3 seeds. "Instant" survives only as a
+  seconds-regime magnitude; "seconds" is behavior, not claimed phenomenology.
 
 ---
 

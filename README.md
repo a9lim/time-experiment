@@ -48,7 +48,7 @@ TIME_MODEL=gemma python scripts/11_gen_capture.py            # Arm G per-token t
 TIME_MODEL=gemma python scripts/20_probe.py         # T1 — the probe at the slot + controls
 TIME_MODEL=gemma python scripts/30_felt.py          # T2 — felt is a length prior (decode/inflation/intermittent)
 TIME_MODEL=gemma python scripts/40_transfer.py      # T3 — scripted axis -> natural felt + OOD
-TIME_MODEL=gemma python scripts/50_generation.py    # T4 — generation-side time (separate, flat) + its figure
+TIME_MODEL=gemma python scripts/50_generation.py    # T4 — generation-side: elapsed read at query time (raw flat → spliced ρ≈0.87) + its figure
 
 # --- variant corpora for the T2 clock-density gradient ---
 TIME_MODEL=gemma TIME_VARIANT=inflation python scripts/10_capture.py --corpus inflation \

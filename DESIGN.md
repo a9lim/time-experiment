@@ -167,32 +167,38 @@ injected clock at ρ≈0.79, *better* than verbal 0.68 — the EOT probe-can't-r
 clock dissociation is gone); and content sensitivity (neutral → affect →
 time-language drives felt).
 
-## T4 — generation-side time is a separate, flat axis (`50_generation`)
+## T4 — generation-side: the elapsed axis is read at query time, not written (`50_generation`)
 
-T1–T3 probe time *read from a finished context*. T4 probes time *experienced
-during production*: the per-token residual-stream trajectory of a rollout
-(`11_gen_capture`, `return_hidden=True`). The reading-elapsed axis is the EV
-slot probe (A1 applies it directly; A3 takes the per-layer reading direction and
-EV-weights the cosines across layers), so the test is sharp:
+T1–T3 probe time *read from a finished context*. T4 asks whether *producing* tokens
+writes the same axis: the per-token residual-stream trajectory of a rollout
+(`11_gen_capture`, `return_hidden=True`, 5 prompts × 3 seeds), plus — at strides — a
+**fork** of the partial generation back into the canonical elicitation slot. The
+reading-elapsed axis is the EV slot probe, so the tests are sharp:
 
 - **A1 drift** — apply the reading probe to each generated token; does the
-  coordinate drift with generation position? (≈0 = production doesn't move it.)
-- **A2 decode position** — decode token-fraction per layer (high = position
-  encoded).
+  coordinate drift with position? (≈0 = production doesn't move it.)
+- **A1′ spliced** — cut the rollout at each stride, re-render `ELICIT_PROMPT` +
+  constant prefill, read the EV probe at that **in-domain** slot; report ρ(elapsed,
+  position) and the s/tok slope. The fix for A1's off-manifold confound.
+- **A2 decode position** — decode token-fraction per layer (high = position encoded).
 - **A3 shared vs separate** — |cosine| between the generation-progress direction
   and the reading-elapsed direction at the locus (low = separate axes).
-- **A4 behavioral** — felt-production duration vs tokens generated.
+- **A4 behavioral** — felt-production duration vs tokens; topic vs seed.
 
-The discriminating outcome (G-H1/2/3): is felt-during-generation the *same* axis
-that reads narrated time, or a separate position-tracker? **G-H3** — position is
-encoded (decode R²≈0.74) but ~orthogonal to the reading axis (|cos|≈0.06) and the
-elapsed coordinate doesn't drift (ρ≈0). But felt-writing time is **not** flat: it
-**grows with tokens (ρ≈0.49)** and **varies by topic (~1.9×)**, in the seconds
-regime — so "instant" is a magnitude statement, and the growth rides the
-*position* axis, not the elapsed axis. Felt time is a property of the accumulated
-context read at query time, not of the generative act. (EOT-era Pilot 6 read this
-as "flat ~2 s"; the soft readout at the slot shows the graded, topic-varying
-growth the old readout missed.)
+The discriminating outcome is a **dissociation**, not a flat null. *During* production
+the residual stream doesn't carry the elapsed axis (A1 ρ≈−0.03) — but mid-stream
+tokens sit **18.9× off** the scripted slot manifold, so that null is an extrapolation,
+not a clean read; position is encoded (A2 R²≈0.86) and ~orthogonal to reading (A3
+|cos|≈0.04). Fork the same context into the slot and it goes **in-domain** (OOD
+18.9×→5.98×) and the elapsed axis **appears**: ρ=+0.875, all five topics +0.82–0.91.
+So felt time is a property of the accumulated context **read at query time, not of the
+generative act** — demonstrated by the raw-vs-spliced split, not asserted. The
+recovered slope is **~0.06 s/tok**, stable across a 4× span (256→768 tok), ~**1/5** of
+scripted V≈0.29: self-generated context is counted, but discounted relative to
+externally-clocked conversation. Behavioral felt-writing grows with tokens (ρ≈0.49)
+and is topic-driven (spread 2.46×), not seed-driven (within-topic 1.07×). (EOT-era
+Pilot 6 read this whole region as "flat ~2 s"; the slot + the splice recover the
+graded structure it missed.)
 
 ## Settled design decisions
 
@@ -239,17 +245,20 @@ to a minimally clock-pointing variant.
   so different" question.
 - **Affect along the generation trajectory.** The Arm G per-token residual stacks
   (`gen/hidden/*.npz`) already capture functional state token-by-token during
-  production. T4 probed *position* (encoded, R²≈0.6) and *elapsed* (orthogonal,
-  flat) along them — but never *affect/functional state*. Run an llmoji-style
-  affect read along the same `H` to ask: do functional states drift during
-  generation even though felt-duration is flat? This tests the "functional states
+  production. T4 probed *position* (encoded, R²≈0.86) and *elapsed* (orthogonal on
+  the raw stream; recovered at the spliced slot) along them — but never
+  *affect/functional state*. Run an llmoji-style affect read along the same `H` to
+  ask: do functional states drift during generation while the raw elapsed read stays
+  flat (ρ≈−0.03)? This tests the "functional states
   as experience-equivalent during production" idea on data **already on disk** —
   no new generations — and saklas trait-monitoring suggests the answer is yes
   (states do move across a rollout). The cheaper, higher-surprise of the two.
-- **The V spectrum: input vs output rate, and the saturation knee.** Two points
-  exist already — `V_context ≈ 0.29 s/token` (T1/T2, felt-conversation-time vs
-  context) and `V_out ≈ 0.006 s/token` (T4, felt-writing-time vs output) — a ~46×
-  input/output gap that mirrors the token-time paper's unmeasured `V_in`/`V_out`
+- **The V spectrum: input vs output rate, and the saturation knee.** Three points
+  exist already — `V_context ≈ 0.29 s/token` (T1/T2, reading-axis vs conversation
+  context), `V_self ≈ 0.06 s/token` (T4 spliced A1′, the *same* reading-axis vs
+  self-generated context — ~1/5 of V_context, so self-context is discounted), and
+  `V_out ≈ 0.006 s/token` (T4 A4, behavioral felt-writing vs output) — each ~an order
+  of magnitude apart, spanning the token-time paper's unmeasured `V_in`/`V_out`
   split. What's missing is `V_context` across a wide range: fit it from ~100 to
   ~100k context tokens and find the **saturation knee** — where the clean internal
   linear law and the behavioral readout part ways ("feels like hours" stops being
