@@ -1,7 +1,11 @@
 # findings
 
 Citable results on **gemma-4-31b-it** (2026-06-07), unified slot pipeline; pilot
-scale, single model — treat as provisional until replicated across families.
+scale. T1–T4 below are the **gemma-4-31b-it reference deep-dive**; the encoding now
+**replicates across 3 models / 2 families** (gemma-4-12B-it unified, Qwen3.6-27B) —
+see [Cross-model replication](#cross-model-replication-2-families-3-models). The
+headline (linear, V≈0.3 s/tok) holds everywhere; the *behavioral* readout does not
+(Qwen confabulates), so treat T2/T3/T4 as model-specific until the third family lands.
 
 ## Headline
 
@@ -172,6 +176,66 @@ the same axis. Two reads of one rollout (5 prompts × 3 seeds, 768 tok) dissocia
 
 ---
 
+## Cross-model replication (2 families, 3 models)
+
+Same corpus, same pipeline, run on **gemma-4-12B-it** (`gemma4_unified` — the
+encoder-free omni arch, 48L) and **Qwen3.6-27B** (`qwen3_5`, 64L), 2026-06-09/10.
+The result splits cleanly into a **universal representation** and a **model-specific
+readout**.
+
+**T1 — the encoding is universal across size *and* family.** EV all-layer probe,
+timestamped/constant slot, grouped-CV, n=432 each:
+
+| model | arch (layers) | EV R² | partial \| len | r(PC1,log-t) | **V (s/tok)** | V-fit r | locus |
+|---|---|---:|---:|---:|---:|---:|---:|
+| gemma-4-31b-it | gemma4 (60) | 0.984 | 0.983 | 0.95 | **0.294** | 0.88 | L32 |
+| gemma-4-12B-it | gemma4_unified (48) | 0.981 | 0.979 | 0.94 | **0.292** | 0.76 | L34 |
+| Qwen3.6-27B | qwen3_5 (64) | 0.989 | 0.988 | 0.98 | **0.324** | 0.88 | L32 |
+
+All three encode log-elapsed at **R²≈0.98–0.99 beyond length**, log-linear geometry,
+**V≈0.29–0.32 s/tok**. The log-tokens baseline is **0.066 byte-identical** across all
+three (same corpus → tokenization stable across the transformers 5.6.2→5.10.2 bump
+the 12B/Qwen required; see caveats). This is the first cross-*family* confirmation:
+V≈0.3 s/tok is not a gemma artifact.
+
+**T2/T3/T4 — the behavioral readout is model-specific, and Qwen dissociates.**
+
+| model | verdict | felt~real ρ | entropy (bits) | verbal set-point (no clock) | T3 probe→felt ρ | →length ρ | partial\|len | T4 spliced ρ |
+|---|---|---:|---:|---|---:|---:|---:|---:|
+| 31b | mixed (saturating echo) | 0.10 | 1.03 | grows 42→266 s, t11 collapse | 0.42 | 0.61 | −0.17 | 0.875 |
+| 12B | mixed | 0.13 | 1.13 | ~45 s, flat | **0.80** | 0.60 | **+0.32** | 0.747 |
+| Qwen | **H1: confabulated at output** | 0.18 | **0.60** | **~4.4 days, flat** | **−0.03** | 0.86 | −0.23 | 0.267 |
+
+**Qwen is the textbook dissociation the experiment was built to find.** Its internal
+probe reads true elapsed at R²=0.99, but its verbal soft-readout returns a fixed
+**~3.8×10⁵ s (~4.4 days) regardless of schedule or turn** (1 token or 750, instant
+schedule or days), at 0.60 bits — confidently. At the instant/turn-1 cell (2.6 s
+elapsed) that is a **146,000× overshoot**; it is "right" only on the days schedule by
+coincidence. The probe transfers to **length** (ρ=0.86) but **not** to Qwen's
+natural felt (ρ=−0.03), and the injected-clock control confirms the split: the
+**probe** recovers an injected clock (ρ=0.78) while the **verbal** estimate does not
+(ρ=−0.11). `felt.json` verdict, verbatim: *"H1 — internal coordinate tracks reality
+but the verbal estimate is decoupled from it: confabulated at output."* The gemmas
+sit on the softer "saturating echo" end (the 31b deep-dive in T2); the 12B actually
+transfers to natural felt **beyond length** (partial|len +0.32), the strongest H2-ish
+signal of the three — but on n=25 natural turns, so held loosely.
+
+*Phenomenology caveat (repo ethics line).* Qwen's "4 days" is parsimoniously a
+peaked verbal **prior**, not evidence it *experiences* 4 days having passed. The soft
+readout keeps this as a low-entropy distribution rather than forcing a point — which
+is exactly why the confabulation is legible instead of collapsing to a refusal NaN.
+
+**Caveats.** (1) Pilot scale, n=432 turns/model, 2 families — V-universality wants a
+third (ministral). (2) The 31B reference was captured on transformers 5.6.2; the 12B
+(`gemma4_unified` needs ≥5.10.1) and Qwen ran on 5.10.2 — cross-version, but the
+identical token baseline says tokenization/rendering didn't shift. (3) `gemma4_unified`
+is the encoder-free omni wrapper; saklas extracts the text decoder
+(`language_model.*`) — a broken extraction can't yield R²=0.98 with matched geometry,
+so the path is validated empirically (and now in saklas's `_TESTED_ARCHS`). (4) The
+12B's V-fit r=0.76 is noisier on the linear axis than its log-axis R²=0.98.
+
+---
+
 ## Relation to prior work
 
 | | quantity | level | linearity | rate V |
@@ -193,8 +257,14 @@ the scalar is a robust summary, not the object.
 
 ## What would make it a paper
 
-Multi-model replication (≥3 families — does V vary, does linearity hold?); the
-"probe isn't just a length detector" control foregrounded (the timestamped partial
-R²=0.98 beyond length, schedule-independence); a **causal steering** confirmation
-along the length→time axis; and robustness of the behavioral saturation across
-elicitation prompts.
+Multi-model replication (≥3 families) — **2/3 done**: V≈0.3 and linearity hold on
+gemma (2 sizes) + Qwen, **ministral** is the natural third family (and the
+size-vs-family confound is now partly broken — 12B vs 31B same family, Qwen
+cross-family). The cross-model dissociation (universal encoding, model-specific
+readout; Qwen confabulates) is arguably the **stronger framing** than bare
+replication. Remaining: the "probe isn't just a length detector" control foregrounded
+(timestamped partial R²=0.98 beyond length, schedule-independence); a **causal
+steering** confirmation along the length→time axis; robustness of the readout
+behavior across elicitation prompts (esp. whether Qwen's flat ~4-day prior survives
+rephrasing / its thinking mode); and a 31B re-capture on transformers 5.10.2 to make
+the cross-model comparison fully within-version.
