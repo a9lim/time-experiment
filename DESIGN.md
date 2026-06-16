@@ -228,10 +228,15 @@ to a minimally clock-pointing variant.
 
 ## Out of scope for v1 (later)
 
-- **Causal steering arm.** Extract a bipolar time direction, steer a neutral
-  conversation along it, measure whether the stated estimate / behavior shifts —
-  the closure that proves the representation is load-bearing. Saklas does this
-  natively; deferred.
+- **Causal steering arm — STARTED (T5, `scripts/60_steer.py`; see
+  `docs/findings.md`).** Add the contrastive elapsed axis into the residual stream
+  during the elicitation forward, read whether the stated estimate shifts. Proof of
+  concept (llama + Qwen): the axis is **load-bearing** (steering moves the spoken
+  duration, matched-norm random ≈ 0), the **ridge probe direction is not the causal
+  direction** (cos≈0.18, inert), and the introspection dissociation is **causal** —
+  the faithful model's mouth co-moves with the coordinate, Qwen's *inverts*
+  (ρ=−0.98). Remaining: gemma-31b reference + a third model; per-model on-manifold
+  α-calibration.
 - T4's T_narr factorial (matched-length generations narrating little vs much
   elapsed time) and multi-model replication of every throughline.
 - **Matched-length topic factorial.** Hold token count *and* gap schedule fixed;

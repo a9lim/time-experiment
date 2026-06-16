@@ -195,6 +195,70 @@ the same axis. Two reads of one rollout (5 prompts × 3 seeds, 768 tok) dissocia
 
 ---
 
+## T5 — the causal arm: the elapsed axis is load-bearing, and the readout dissociation is causal
+
+T1–T4 decode; T5 **intervenes** (`scripts/60_steer.py`). We add an elapsed
+direction into the residual stream during the elicitation forward and read whether
+the model's *stated* duration moves with it. Two readouts per push: the **verbal**
+soft-distribution point (the model's own `W_U` — the causal test, a *different*
+readout than the probe) and the **probe re-read** (the EV probe on the steered slot
+— the manipulation check). A matched-norm **random** direction is the specificity
+control; the **monotonicity** (Spearman of readout vs dose) gates validity beside it.
+
+**Two design choices, both load-bearing — learned the hard way (an early
+all-layer push at α=2 knocked Qwen off-manifold, where its verbal tracked *generic*
+perturbation and random inflated it as much as the real axis; the random control +
+monotonicity caught the invalid run):**
+
+1. **The causal direction is the contrastive diff-of-means (`meandiff`), not the
+   ridge probe normal (`time`).** The ridge normal is **~orthogonal to the data
+   axis** — cos(meandiff, ridge) = **0.17–0.19** in both models — and is causally
+   **inert**: it moves its own linear readout (probe +2.6) but not the model (llama
+   verbal +0.004). The diff-of-means is the literature-standard steering vector.
+   *The probe direction is not the causal direction* is itself a methodological
+   result.
+2. **The on-manifold window is narrow and model-specific.** "α = Δlog-s per layer"
+   maps to different *Euclidean* pushes across models; Qwen is more brittle (clean
+   at |α|≤1, off-manifold at α=2 where llama is fine). Validity is gated
+   empirically: the random readout must be ~flat (non-monotone) at the dose used.
+
+**Result — matched protocol (pilot, 16 ctx, α∈[−1,1], all-site logs):**
+
+| model | class | meandiff probe (manip.) | **meandiff verbal (causal)** | random verbal | ridge verbal |
+|---|---|---:|---:|---:|---:|
+| Llama-3.2-3B | faithful | +5.11 (ρ+0.98) | **+0.16 [+0.09,+0.23]** (ρ+0.19) | +0.03 (ρ+0.05, null) | +0.004 (inert) |
+| Qwen3.6-27B | confabulating | +8.35 (ρ+0.99) | **−3.37 [−3.51,−3.26]** (ρ−0.98) | +0.38 (ρ+0.05, non-mono) | −1.74 (ρ−0.73) |
+
+- **Faithful (llama): coordinate and mouth co-move.** Forcing the elapsed
+  coordinate up (probe +5.1, monotone) raises the spoken estimate (+0.16, CI
+  excludes 0) — **load-bearing**, but *attenuated* (the coordinate moves orders of
+  magnitude, the mouth ×~1.2): the **causal** form of T2's "behavioral readout is a
+  degraded echo".
+- **Confabulator (Qwen): the mouth is causally *inverted*.** The same push raises
+  the coordinate (probe +8.3, ρ+0.99) but drives the verbal **down** — from
+  **391 811 s (≈4.5 days) → 2 502 s (≈42 min)** across α∈[−1,1], **ρ=−0.98**, *not*
+  at a grid edge — while random leaves both flat. The correlational verbal↔probe
+  ρ=−0.27 (cross-family) is now a **causal, near-deterministic inversion
+  (ρ=−0.98)**: Qwen's introspective readout is not broken-and-noisy, it is wired
+  *inverted* relative to its own representation. (Its ridge push drives verbal down
+  too — consistent: any "more-time" push raises the coordinate → verbal falls.)
+
+**Same axis, same α, opposite causal sign** — faithful co-moves, confabulator
+inverts. This is the **causal** confirmation of the introspection dissociation
+T2–T4 read correlationally. H2 stays rejected; the H1 flavor is now *causal* — the
+verbal readout is intervention-dissociable from the internal coordinate, softly in
+the faithful case and invertedly in Qwen.
+
+**Scope / caveats.** First causal results, **2 models** (one faithful, one
+confabulator) — proof of concept, not the sweep. n=16 contexts/model, smoke-then-
+pilot scale. α is **not magnitude-matched** across models (the *sign and
+monotonicity* carry the dissociation, not the slope magnitude). The gemma-31b
+reference (the faithful side on the reference model) + ≥1 more faithful model are
+the next runs; a per-model on-manifold α-calibration (target a fixed probe-read
+shift, gate on the random null) generalizes the protocol.
+
+---
+
 ## Cross-family replication (10 models, 9 families)
 
 Same corpus, same pipeline, swept across **10 models** spanning **9 distinct
@@ -398,7 +462,7 @@ the scalar is a robust summary, not the object.
 
 Multi-family replication is **done** — 10 models / 9 architectures, linearity universal
 (R² 0.88–0.99), log-geometry universal, mid-depth locus universal. The framing has shifted
-from "does it replicate" (yes) to a **three-part result that is stronger than bare
+from "does it replicate" (yes) to a **four-part result that is stronger than bare
 replication**:
 
 1. **Universal encoding, model-specific rate.** Linear/log-linear everywhere; V varies
@@ -408,14 +472,21 @@ replication**:
    length — a *negative control we didn't have to construct*, with MLA as the mechanistic
    lead. **The direct test (a second MLA model — DeepSeek-V3) is the single highest-value
    follow-up.**
-3. **An introspection dissociation (Qwen).** Best internal code, confabulated output —
-   verbal access broken while the representation is intact. Squarely the
-   emissions-track-hidden-state question of the sibling lines.
+3. **An introspection dissociation (Qwen) — now causal (T5).** Best internal code,
+   confabulated output; steering makes it **causal** — forcing the coordinate up drives
+   Qwen's spoken estimate *down* (ρ=−0.98) while a faithful model's mouth co-moves. Squarely
+   the emissions-track-hidden-state question of the sibling lines, with intervention not just
+   correlation.
+4. **The representation is load-bearing (T5).** Steering the contrastive elapsed axis moves
+   the stated duration, specifically (matched-norm random ≈ 0), and the *ridge probe
+   direction is not the causal direction* (cos≈0.18 with the data axis, inert) — a
+   methodological contribution. Proof of concept on 2 models; **the gemma reference + ≥1 more
+   faithful model is the next run.**
 
-Remaining for submission: a **causal steering** confirmation along the length→time axis
-(does pushing the axis move the felt read?); robustness of the readout across **elicitation
-prompts** (esp. whether Qwen's flat
-~4-day prior survives rephrasing / its thinking mode); the **gpt-oss crop fix** + re-run to
+Remaining for submission: **scale T5** (gemma-31b reference + a third model; per-model
+on-manifold α-calibration); robustness of the readout across **elicitation prompts** (esp.
+whether Qwen's flat ~4-day prior survives rephrasing / its thinking mode — and whether the
+T5 inversion does too); the **gpt-oss crop fix** + re-run to
 get an 11th model and a sliding-window data point; a **31B re-capture on 5.10.2** for full
 within-version comparison; and scaling n beyond pilot. The "probe isn't just a length
 detector" control is now foregrounded by grab-bag I (pooled signal is clock-driven and
