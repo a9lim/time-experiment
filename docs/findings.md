@@ -272,7 +272,7 @@ A–J); the headline tables are below.
 
 EV all-layer probe, timestamped/constant slot, grouped-CV by conversation, n=432 each:
 
-| model | arch (L) | EV R² | partial\|len | **V (s/tok)** | no-clock r | locus | r(PC1,log-t) |
+| model | arch (L) | EV R² | partial-len | **V (s/tok)** | no-clock r | locus | r(PC1,log-t) |
 |---|---|---:|---:|---:|---:|---:|---:|
 | gemma-4-31b-it | gemma4 (60) | 0.984 | 0.983 | **0.29** | 0.88 | 54% | 0.95 |
 | gemma-4-12B-it | gemma4_unified (48) | 0.981 | 0.979 | **0.29** | 0.76 | 72% | 0.94 |
@@ -283,7 +283,7 @@ EV all-layer probe, timestamped/constant slot, grouped-CV by conversation, n=432
 | Ministral-3-14B | mistral3 (40) | 0.987 | 0.985 | **2.60** | 0.72 | 51% | 0.94 |
 | DeepSeek-V2-Lite | deepseek_v2 (27) | 0.977 | 0.975 | **flat†** | −0.19 | 46% | 0.97 |
 | granite-4.1-30B | granite (64) | 0.977 | 0.975 | **1.48** | 0.59 | 81% | 0.97 |
-| **GLM-4.7-Flash** | glm4_moe_lite (47) | **0.980** | **0.978** | **0.82** | **0.64** | **54%** | **0.97** |
+| GLM-4.7-Flash | glm4_moe_lite (47) | 0.980 | 0.978 | **0.82** | 0.64 | 54% | 0.97 |
 
 † DeepSeek's no-clock read is flat (r=−0.19); the fitted slope (−4.2) is **not** a
 meaningful rate — see the anomaly below.
