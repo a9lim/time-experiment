@@ -2,7 +2,7 @@
 
 Research repo: **LLMs linearly encode elapsed conversational time in context
 length** (≈0.3 s/token off the residual stream — the token-time hypothesis made
-representational and measured). Sibling of `llmoji-study` / `attractor-study`. Not
+representational and measured). Sibling of `llmoji-experiment` / `attractor-experiment`. Not
 a library — small explicit analyses, keep docs current with code.
 
 ## Read first
@@ -14,9 +14,9 @@ a library — small explicit analyses, keep docs current with code.
 
 ## Relationship to the siblings
 
-Imports `saklas` (model loading + Mahalanobis whitener) and `llmoji_study.config`
+Imports `saklas` (model loading + Mahalanobis whitener) and `llmoji_experiment.config`
 (the shared model registry, lazily — so the pure-logic modules import without it)
-plus `llmoji_study.capture`'s chat-template fixups. Dependency is one-directional.
+plus `llmoji_experiment.capture`'s chat-template fixups. Dependency is one-directional.
 
 Key divergence from the siblings: the main line is **scripted, not generated**,
 and the canonical readout is the **prefilled elicitation slot** — render
@@ -69,8 +69,9 @@ first.
 ## Conventions
 
 - `.venv/bin/python` or an activated venv; plain `python` is unreliable here.
-  The sibling `../llmoji-study/.venv` has the full stack (saklas, llmoji_study,
-  torch, time_experiment editable) and the model registry.
+  This repo's `.venv` points to the shared `../.venvs/llmoji-experiment`
+  environment, with saklas, llmoji_experiment, torch, time_experiment editable,
+  and the model registry.
 - `TIME_MODEL` selects the short-name (default `gemma`); `TIME_VARIANT` routes a
   variant corpus to `data/<model>_<variant>/`.
 - One `rows.jsonl` + per-(source,id,rendering,mode) NPZ sidecars are the source

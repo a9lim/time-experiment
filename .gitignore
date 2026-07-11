@@ -5,7 +5,7 @@ figures/
 # Python
 __pycache__/
 *.py[cod]
-.venv/
+.venv
 *.egg-info/
 .pytest_cache/
 .DS_Store

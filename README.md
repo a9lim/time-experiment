@@ -5,7 +5,7 @@ probe on the elicitation slot reads elapsed as ≈0.3 s/token off the residual s
 (r=0.88, through the origin) — the token-time hypothesis made representational and
 measured. This repo establishes that encoding and characterizes how the model's
 *stated* duration tracks it (confirms the direction, saturates). Sibling of
-`llmoji-study` / `attractor-study`.
+`llmoji-experiment` / `attractor-experiment`.
 
 The elapsed-time probe is canonicalized as the **prefilled answer to a time
 elicitation prompt**: ask "roughly how long has this been going on?", prefill
@@ -18,10 +18,10 @@ one-prompt spine, the four throughlines).
 Editable installs of the sibling engines, then this repo:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ../saklas          # model loading + Mahalanobis whitener
-pip install -e ../llmoji          # taxonomy/extract helpers (used by llmoji_study)
-pip install -e ../llmoji-study    # shared model registry + chat-template fixups
+source .venv/bin/activate  # .venv -> ../.venvs/llmoji-experiment
+pip install -e ../../saklas          # model loading + Mahalanobis whitener
+pip install -e ../../llmoji          # taxonomy/extract helpers (used by llmoji_experiment)
+pip install -e ../llmoji-experiment    # shared model registry + chat-template fixups
 pip install -e .
 ```
 

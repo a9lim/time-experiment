@@ -12,11 +12,11 @@ dependencies = [
     "scipy",
     "scikit-learn",
     "torch",
-    # saklas (model loading + whitener) and llmoji-study (model registry,
+    # saklas (model loading + whitener) and llmoji-experiment (model registry,
     # sidecar conventions) are installed editable from sibling repos:
-    #   pip install -e ../saklas
-    #   pip install -e ../llmoji
-    #   pip install -e ../llmoji-study
+    #   pip install -e ../../saklas
+    #   pip install -e ../../llmoji
+    #   pip install -e ../llmoji-experiment
     #   pip install -e .
 ]
 

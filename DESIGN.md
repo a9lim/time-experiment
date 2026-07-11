@@ -210,7 +210,7 @@ graded structure it missed.)
 - One prompt for the probe and the behavioral readout; the rendering carries the
   clock dissociation.
 - Primary target: **elapsed** (in-context, accumulated), log-seconds.
-- Models: open-weight stable (shared `llmoji_study` registry); `probes=[]` (we
+- Models: open-weight stable (shared `llmoji_experiment` registry); `probes=[]` (we
   fit our own axis). A null on small models is itself informative.
 
 ## What regeneration re-measures
