@@ -68,10 +68,9 @@ first.
 
 ## Conventions
 
-- `.venv/bin/python` or an activated venv; plain `python` is unreliable here.
-  This repo's `.venv` points to the shared `../.venvs/llmoji-experiment`
-  environment, with saklas, llmoji_experiment, torch, time_experiment editable,
-  and the model registry.
+- Use the machine's shared base Python 3.12 via plain `python`. It contains
+  editable installs of saklas, llmoji_experiment, and time_experiment plus the
+  model registry dependencies.
 - `TIME_MODEL` selects the short-name (default `gemma`); `TIME_VARIANT` routes a
   variant corpus to `data/<model>_<variant>/`.
 - One `rows.jsonl` + per-(source,id,rendering,mode) NPZ sidecars are the source

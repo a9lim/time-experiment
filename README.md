@@ -18,7 +18,7 @@ one-prompt spine, the four throughlines).
 Editable installs of the sibling engines, then this repo:
 
 ```bash
-source .venv/bin/activate  # .venv -> ../.venvs/llmoji-experiment
+python --version  # system Python 3.12
 pip install -e ../../saklas          # model loading + Mahalanobis whitener
 pip install -e ../../llmoji          # taxonomy/extract helpers (used by llmoji_experiment)
 pip install -e ../llmoji-experiment    # shared model registry + chat-template fixups
