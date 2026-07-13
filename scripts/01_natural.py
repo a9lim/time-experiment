@@ -30,7 +30,7 @@ from time_experiment.capture import content_position, release_memory, render  # 
 from time_experiment.config import DATA_DIR, resolve_model  # noqa: E402
 
 try:
-    from llmoji_experiment.capture import (  # noqa: E402
+    from transformer_experiments.kaomoji.capture import (  # noqa: E402
         maybe_override_gpt_oss_chat_template, maybe_override_ministral_chat_template)
 except Exception:  # pragma: no cover
     def maybe_override_gpt_oss_chat_template(_s) -> bool: return False

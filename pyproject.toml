@@ -6,17 +6,16 @@ build-backend = "setuptools.build_meta"
 name = "time-experiment"
 version = "0.0.1"
 description = "Probing how LLMs represent elapsed conversational time."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
+    "transformer-experiments>=0.1,<0.2",
     "numpy",
+    "saklas>=1.4.6",
     "scipy",
     "scikit-learn",
     "torch",
-    # saklas (model loading + whitener) and llmoji-experiment (model registry,
-    # sidecar conventions) are installed editable from sibling repos:
+    # saklas is also developed locally when needed:
     #   pip install -e ../../saklas
-    #   pip install -e ../../llmoji
-    #   pip install -e ../llmoji-experiment
     #   pip install -e .
 ]
 

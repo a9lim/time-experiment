@@ -4,8 +4,8 @@
 probe on the elicitation slot reads elapsed as ≈0.3 s/token off the residual stream
 (r=0.88, through the origin) — the token-time hypothesis made representational and
 measured. This repo establishes that encoding and characterizes how the model's
-*stated* duration tracks it (confirms the direction, saturates). Sibling of
-`llmoji-experiment` / `attractor-experiment`.
+*stated* duration tracks it (confirms the direction, saturates). It is runtime-
+independent of the sibling experiments.
 
 The elapsed-time probe is canonicalized as the **prefilled answer to a time
 elicitation prompt**: ask "roughly how long has this been going on?", prefill
@@ -15,14 +15,12 @@ one-prompt spine, the four throughlines).
 
 ## Install
 
-Editable installs of the sibling engines, then this repo:
+Install the workspace-root shared package, then this repo:
 
 ```bash
 python --version  # system Python 3.12
-pip install -e ../../saklas          # model loading + Mahalanobis whitener
-pip install -e ../../llmoji          # taxonomy/extract helpers (used by llmoji_experiment)
-pip install -e ../llmoji-experiment    # shared model registry + chat-template fixups
-pip install -e .
+python -m pip install -e ..
+python -m pip install -e .
 ```
 
 ## Run

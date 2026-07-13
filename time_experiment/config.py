@@ -3,9 +3,8 @@
 Lock these before a run — changing schedules, the base datetime, or the
 readout prompts invalidates cross-run comparisons.
 
-Model resolution piggybacks on ``llmoji_experiment.config.MODEL_REGISTRY`` (the
-shared stable of open-weight models) but every path lives under THIS repo,
-mirroring how attractor-experiment re-derives its paths. We pass ``probes=[]`` to
+Model resolution uses the workspace-root shared model registry, but every path
+lives under THIS repo. We pass ``probes=[]`` to
 saklas — this study fits its own time manifold, so the bundled affect probes
 aren't needed (``probe_calibrated`` in the shared registry is irrelevant here).
 """
@@ -68,18 +67,11 @@ class ModelSpec:
 
 
 def resolve_model(short: str) -> ModelSpec:
-    """Resolve a short name against the shared llmoji_experiment registry.
+    """Resolve a short name against the workspace-root model registry."""
+    from transformer_experiments.models import resolve_model as resolve_shared_model
 
-    Imported lazily so the time/schedule constants in this module are usable
-    without llmoji_experiment installed (e.g. for offline logic tests).
-    """
-    from llmoji_experiment.config import MODEL_REGISTRY as _LLMOJI_REGISTRY
-
-    if short not in _LLMOJI_REGISTRY:
-        raise KeyError(
-            f"unknown model {short!r}; known: {sorted(_LLMOJI_REGISTRY)}"
-        )
-    return ModelSpec(short_name=short, model_id=_LLMOJI_REGISTRY[short].model_id)
+    shared = resolve_shared_model(short)
+    return ModelSpec(short_name=short, model_id=shared.model_id)
 
 
 def current_model() -> ModelSpec:

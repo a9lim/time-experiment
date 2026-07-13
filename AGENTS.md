@@ -2,8 +2,8 @@
 
 Research repo: **LLMs linearly encode elapsed conversational time in context
 length** (≈0.3 s/token off the residual stream — the token-time hypothesis made
-representational and measured). Sibling of `llmoji-experiment` / `attractor-experiment`. Not
-a library — small explicit analyses, keep docs current with code.
+representational and measured). Runtime-independent of the other experiments.
+Not a library — small explicit analyses, keep docs current with code.
 
 ## Read first
 
@@ -12,11 +12,13 @@ a library — small explicit analyses, keep docs current with code.
   T3 transfer / T4 generation-side), what's out of scope for v1.
 - [`README.md`](README.md): install order + run commands (9 scripts).
 
-## Relationship to the siblings
+## Shared workspace infrastructure
 
-Imports `saklas` (model loading + Mahalanobis whitener) and `llmoji_experiment.config`
-(the shared model registry, lazily — so the pure-logic modules import without it)
-plus `llmoji_experiment.capture`'s chat-template fixups. Dependency is one-directional.
+This repo is independent of every sibling experiment. It imports `saklas`
+(model loading + Mahalanobis whitener) and lazily uses the workspace-root
+`transformer_experiments` package for the shared model registry and
+chat-template fixups. Pure-logic modules remain importable without loading the
+model stack.
 
 Key divergence from the siblings: the main line is **scripted, not generated**,
 and the canonical readout is the **prefilled elicitation slot** — render
@@ -68,9 +70,9 @@ first.
 
 ## Conventions
 
-- Use the machine's shared base Python 3.12 via plain `python`. It contains
-  editable installs of saklas, llmoji_experiment, and time_experiment plus the
-  model registry dependencies.
+- Use the machine's shared base Python 3.12 via plain `python`. Install the
+  workspace root and this experiment editable; no sibling experiment is
+  required.
 - `TIME_MODEL` selects the short-name (default `gemma`); `TIME_VARIANT` routes a
   variant corpus to `data/<model>_<variant>/`.
 - One `rows.jsonl` + per-(source,id,rendering,mode) NPZ sidecars are the source
