@@ -7,7 +7,7 @@ Not a library — small explicit analyses, keep docs current with code.
 
 ## Read first
 
-- [`DESIGN.md`](DESIGN.md): the experimental logic — H1/H2/H3 hypotheses, the
+- [`docs/design.md`](docs/design.md): the experimental logic — H1/H2/H3 hypotheses, the
   one-prompt spine, the four throughlines (T1 probe / T2 felt-is-a-length-prior /
   T3 transfer / T4 generation-side), what's out of scope for v1.
 - [`README.md`](README.md): install order + run commands (9 scripts).

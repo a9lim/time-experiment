@@ -255,12 +255,16 @@ def fit_ev_probe(X3d: np.ndarray, y: np.ndarray, groups: np.ndarray,
     data (rectangular arrays — every layer shares D, no pickle) + the EV weights
     from per-layer grouped-CV R². ``apply_ev_probe`` reads it as Σ_L w_L·read_L."""
     n, L, D = X3d.shape
-    base_mean = np.empty((L, D)); base_scale = np.empty((L, D))
-    base_coef = np.empty((L, D)); base_intercept = np.empty(L)
+    base_mean = np.empty((L, D))
+    base_scale = np.empty((L, D))
+    base_coef = np.empty((L, D))
+    base_intercept = np.empty(L)
     for li in range(L):
         p = fit_full(X3d[:, li, :], y)
-        base_mean[li] = p["mean"]; base_scale[li] = p["scale"]
-        base_coef[li] = p["coef"]; base_intercept[li] = p["intercept"]
+        base_mean[li] = p["mean"]
+        base_scale[li] = p["scale"]
+        base_coef[li] = p["coef"]
+        base_intercept[li] = p["intercept"]
     _, r2_per_layer = perlayer_oof(X3d, y, groups, n_splits=n_splits)
     return {
         "layers": np.asarray(layers, dtype=np.int64),

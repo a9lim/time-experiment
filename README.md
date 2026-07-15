@@ -10,7 +10,7 @@ independent of the sibling experiments.
 The elapsed-time probe is canonicalized as the **prefilled answer to a time
 elicitation prompt**: ask "roughly how long has this been going on?", prefill
 `It's been <D>`, and read the residual stream at the duration slot. See
-[`DESIGN.md`](DESIGN.md) for the experimental logic (the H1/H2/H3 hypotheses, the
+[`docs/design.md`](docs/design.md) for the experimental logic (the H1/H2/H3 hypotheses, the
 one-prompt spine, the four throughlines).
 
 ## Install
@@ -100,6 +100,14 @@ data/
   <model>/natural/conversations.json         model-generated looms
   <model>/gen/                               Arm G trajectories + readouts
   <model>/{probe.npz,probe_meta.json,fit_oof.npz,felt.json,transfer.json,decode_rows.csv,natural_reads.csv}
+figures/          generated static and interactive figures
+logs/             local run logs and compact tracked status notes
+tests/            offline duration, storage, and synthetic-analysis checks
+docs/             design and findings
 ```
 
 Data and figures are gitignored regenerated artifacts.
+
+## License
+
+CC-BY-SA-4.0. See [LICENSE](LICENSE).
