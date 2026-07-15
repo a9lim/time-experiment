@@ -3,6 +3,8 @@ data/**
 !data/.gitkeep
 figures/**
 !figures/.gitkeep
+!figures/readout/
+!figures/readout/**
 
 # Python
 __pycache__/

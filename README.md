@@ -100,7 +100,7 @@ data/
   <model>/natural/conversations.json         model-generated looms
   <model>/gen/                               Arm G trajectories + readouts
   <model>/{probe.npz,probe_meta.json,fit_oof.npz,felt.json,transfer.json,decode_rows.csv,natural_reads.csv}
-figures/          generated static and interactive figures
+figures/          generated figures; readout/ holds compact tracked evidence
 logs/             local run logs and compact tracked status notes
 tests/            offline duration, storage, and synthetic-analysis checks
 docs/             design and findings

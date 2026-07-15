@@ -49,7 +49,7 @@ two-process direction, on real data. (2) Both curves are concave in log–log
 fit is misspecified; the robust claims are the **gap** and the **form ranking**,
 not the exact exponents. The internal form is genuinely ambiguous at this token
 range (3-way tie) — no claim is made that internal is superlinear.
-![llama forms](figures/llama_felt_time_forms.png)
+![llama forms](../figures/readout/llama_felt_time_forms.png)
 
 ## B — rates corpus, four models (apples-to-apples verbal law)
 
@@ -66,7 +66,7 @@ Faithful no-clock r(tokens, verbal) runs 0.73–0.95; clock-present the faithful
 verbal tracks true elapsed at 0.90–0.96 across a **4320×** gt range (30 min → 7
 days), while Qwen's tracks it at 0.03. Phi's fit is noisy (CV-logMSE ≈0.47) —
 form call is soft there; the β and clock-tracking are not.
-![cross-model](figures/crossmodel_verbal_law.png)
+![cross-model](../figures/readout/crossmodel_verbal_law.png)
 
 ## C — Qwen's anchor is corpus-dependent; the decoupling is the invariant
 
@@ -78,7 +78,7 @@ record puts p=0.46 on "1 second", p=0.44 on "3 minutes", p=0.011 on the correct
 over-specifies: the robust phenomenon is that Qwen's readout ignores the elapsed
 signal (length and clock alike) and adopts a **corpus-specific anchor**, not that
 the anchor is 4 days.
-![qwen](figures/qwen_confabulation.png)
+![qwen](../figures/readout/qwen_confabulation.png)
 
 ## D — artifact verification, and a T5 evidence flag
 
