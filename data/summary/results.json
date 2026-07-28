@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "evidence_cutoff": "2026-06-12",
+  "status": "cross-model-pilot-findings",
+  "models": 10,
+  "architecture_families": 9,
+  "rows_per_model": 432,
+  "explicit_clock": {
+    "claim": "elapsed time is linearly decodable at the elicitation slot in all tested models",
+    "ev_r2_range": [0.888, 0.989],
+    "pc1_log_time_correlation_range": [0.82, 0.98]
+  },
+  "no_clock": {
+    "supported_models": 8,
+    "weak_schedule_confounded_models": ["talkie-1930-13b"],
+    "absent_models": ["deepseek-v2-lite"],
+    "positive_rate_seconds_per_token_range": [0.2, 2.6],
+    "claim": "a length-aligned time prior is common and model-specific, not universal"
+  },
+  "verbal_readout": {
+    "claim": "stated duration is model-dependent and less reliable than the activation probe",
+    "qwen_exception": "verbal estimate anti-correlates with the internal probe"
+  },
+  "limitations": [
+    "pilot scale with grouped cross-validation by conversation",
+    "talkie and granite leak narrated schedule information into the no-clock read",
+    "DeepSeek has no measured no-clock length signal",
+    "positive fitted rates are not evidence of phenomenological time experience",
+    "cross-version transformer captures are not fully within-version"
+  ],
+  "table": "data/summary/cross-model.csv",
+  "sources": [
+    "docs/findings.md",
+    "data/<model>/probe_meta.json",
+    "data/<model>/felt.json",
+    "data/<model>/transfer.json"
+  ]
+}

@@ -1,48 +1,48 @@
 # findings
 
 T1–T4 below are the **gemma-4-31b-it reference deep-dive** (2026-06-07), unified slot
-pipeline, pilot scale. The encoding then **replicates across 10 models / 9 architecture
-families** — see [Cross-family replication](#cross-family-replication-10-models-9-families)
-(2026-06-11). The result splits cleanly into a universal piece and a model-specific one:
+pipeline, pilot scale. The sweep then covers 10 models / 9 architecture families —
+see [Cross-family replication](#cross-family-replication-10-models-9-families)
+(2026-06-11). The result splits into a robust explicit-clock piece and a
+model-dependent no-clock piece:
 
-- **Universal — the encoding.** Elapsed conversational time is **linearly (log-linearly)
-  encoded in context length** on the residual stream: EV all-layer probe R² **0.88–0.99**
-  in *every* model, mid-depth locus, log-duration geometry. This is robust.
-- **Model-specific — the rate.** The per-token rate **V** (inferred elapsed seconds per
-  token) spans **~0.20–2.7 s/tok, ~14×**, and is **not** an artifact of tokenization
-  (re-expressing on a shared content yardstick leaves the spread at 13×). The earlier
-  "**V≈0.3 universal**" was a gemma+Qwen coincidence — **withdrawn.**
+- **Robust — explicit-clock decoding.** When timestamps are present, elapsed
+  conversational time is linearly decodable at the elicitation slot in all 10
+  tested models: EV all-layer probe R² **0.88–0.99**, generally mid-depth, with
+  log-duration geometry.
+- **Model-dependent — no-clock token time.** Remove timestamps and the same
+  readout aligns with context length in eight models (`r=0.59–0.88`), is weak
+  and schedule-confounded in talkie (`r=0.33`), and is absent in DeepSeek
+  (`r=-0.19`). Positive fitted rates span **~0.20–2.60 s/token**; the earlier
+  "**V≈0.3 universal**" claim is withdrawn.
 
 Two models are informative exceptions, not failures: **DeepSeek-V2-Lite** reads a clock
 fine but has **no no-clock length encoding** (its untimestamped read is flat; the MLA
 anomaly), and **Qwen3.6-27B** has the *cleanest* internal code of all yet **confabulates**
 its spoken estimate (verbal anti-correlates with the probe). The behavioral readout
-(T2/T3/T4) is therefore **model-specific**; the *representation* is not.
+(T2/T3/T4) is therefore **model-specific**. The cross-model invariant is
+explicit-clock decodability, not an intrinsic no-clock length code.
 
 ## Headline
 
-**Elapsed conversational time is linearly encoded in context length, on the residual
-stream — universally; the per-token rate is model-specific.** With no clock in the
-transcript, the slot probe's elapsed read grows as a clean (log-)linear function of
-token count, in every model tested:
+**Explicit elapsed time is linearly decodable at the residual-stream
+elicitation slot across all 10 tested models; a no-clock length-to-time prior
+is common but not universal.** With no clock in the transcript:
 
-> **internal elapsed ≈ V · tokens,  intercept ≈ 0**, with **V model-specific** —
-> gemma-4-31b **0.29 s/tok** (r=0.88), Ministral **2.6**, talkie **0.20**, ~14× spread
-> (n=432 no-clock turns/model). Equally a log–log law: the slot encodes log-tokens on a
-> log-elapsed axis (r(PC1,log-t)≈0.95, universal), which exponentiates to a ~linear
-> token→seconds rate. Strong and clean in ~7/10 models; **flat in DeepSeek** (no
-> no-clock signal) and **noisy in talkie** (r=0.33).
+> **slot read ≈ V · tokens** is supported in eight models, with model-specific
+> positive fits from 0.20 to 2.60 s/token (`n=432` turns/model). Talkie is weak
+> and schedule-confounded; DeepSeek is flat. The log-duration geometry of the
+> explicit-clock coordinate replicates across all 10, but that does not imply
+> that every model maps context length onto it.
 
-This is the **token-time hypothesis** (`T_wall = T_tok · V`, *Discrete Minds in a
-Continuous World*, EMNLP-F 2025) **made representational and measured**: they
-*assumed* a constant per-token rate and calibrated it from output token counts;
-we read it **off the activations** and find it is genuinely linear, through the
-origin — and, across models, find that **V itself is a representational property** that
-varies ~14× by model, not a universal constant. It extends Gurnee & Tegmark (linear-probe
-time from the residual stream) from **absolute/calendar** time to **elapsed
-conversational** time. The model's *stated* duration usually confirms the direction (felt
-rises with length) but as a **noisier, saturating echo** of the clean internal code — and
-in one model (Qwen) the spoken estimate is decoupled from it entirely (below).
+This tests the **token-time hypothesis** (`T_wall = T_tok · V`, *Discrete Minds
+in a Continuous World*, EMNLP-F 2025) at the activation level. The results
+support a model-specific no-clock length prior in most, but not all, tested
+models. The model's *stated* duration is a noisier, model-dependent readout; in
+Qwen it is anti-correlated with the probe.
+
+Compact cross-model values are tracked in
+[`data/summary/cross-model.csv`](../data/summary/cross-model.csv).
 
 **Provenance.** Probe = EV-weighted all-layer **prefilled elicitation slot**
 (saklas explained-variance aggregation, one prompt). Verbal estimate = soft
@@ -263,12 +263,12 @@ shift, gate on the random null) generalizes the protocol.
 
 Same corpus, same pipeline, swept across **10 models** spanning **9 distinct
 architectures** (the two Gemmas share a lineage across an arch-variant boundary),
-2026-06-09→11. The split is sharp: **a universal representation** and a
-**model-specific, occasionally-dissociated readout.** The full analytical backbone is
+2026-06-09→11. The split is sharp: **universal explicit-clock decodability**
+and a **model-specific no-clock prior and verbal readout.** The full analytical backbone is
 the cross-family grab-bag (`scripts/91_grabbag.py` → `data/grabbag.json`, analyses
 A–J); the headline tables are below.
 
-### T1 — the encoding is universal across size, family, and attention design
+### T1 — explicit-clock decoding is universal; no-clock length encoding is not
 
 EV all-layer probe, timestamped/constant slot, grouped-CV by conversation, n=432 each:
 
@@ -288,9 +288,9 @@ EV all-layer probe, timestamped/constant slot, grouped-CV by conversation, n=432
 † DeepSeek's no-clock read is flat (r=−0.19); the fitted slope (−4.2) is **not** a
 meaningful rate — see the anomaly below.
 
-Four claims hold across **all 10**:
+Four explicit-clock claims hold across **all 10**:
 
-1. **Linearity is universal.** EV R² **0.88–0.99**, and it is not trivial: the
+1. **Clock decoding is linearly probeable.** EV R² **0.88–0.99**, and it is not trivial: the
    length-only baseline is **≈0.066 in every model**, and the no-clock null is
    *negative* — the probe reads a learned time coordinate, not a token counter.
 2. **The pooled signal is clock-driven and length-orthogonal** (grab-bag I).
@@ -305,14 +305,13 @@ Four claims hold across **all 10**:
    **log**-seconds (median r=0.95, range 0.82–0.98) far more than raw seconds (median
    0.71) — the log-linear law is *geometric*, not a fitting choice.
 
-**The rate V is the part that is NOT universal.** Excluding DeepSeek (flat), V spans
-**0.20 (talkie) → 2.60 (Ministral) s/tok, ~13–14×** — and re-expressing every model on a
-shared content yardstick (gemma's tokenisation) leaves the spread at **13×** (grab-bag A):
-**V is representational, not a tokenisation artifact.** "V≈0.3" was a gemma+Qwen
-coincidence; withdrawn. The no-clock read is clean (r≥0.7) in the gemma/Qwen/Llama/
-Ministral cluster, weaker in phi/granite/GLM (r≈0.6), and **absent in talkie (0.33) and
-DeepSeek (−0.19)** — for those two the "time-in-length" claim is contaminated or absent
-(see talkie's schedule-leak and DeepSeek's anomaly).
+**The rate V is not universal.** Among positive-slope fits it spans
+**0.20 (talkie) → 2.60 (Ministral) s/tok, ~13–14×**; re-expressing every model on a
+shared content yardstick (gemma's tokenisation) leaves a **13×** spread (grab-bag A).
+The no-clock read is clean (r≥0.7) in the gemma/Qwen/Llama/Ministral cluster,
+weaker in phi/granite/GLM (r≈0.6), **weak and schedule-confounded in talkie
+(0.33)**, and absent in DeepSeek (−0.19). Talkie's fitted slope is retained as
+a boundary estimate, not a clean intrinsic rate.
 
 ### The two informative exceptions
 
@@ -442,15 +441,14 @@ capture early; the rest landed on completion.
 |---|---|---|---|---|
 | Gurnee & Tegmark 2310.02207 | **absolute** time | representational (probe) | — | — |
 | Discrete Minds 2506.05790 | elapsed/wall-clock | **behavioral** | *assumed* `∝` | calibrated from output rate, treated as ~constant |
-| **this work** | **elapsed** conversational | **representational** (probe) | **measured** linear/log-linear, universal across 10 models | **measured off activations; model-specific, ~14× spread** |
+| **this work** | **elapsed** conversational | **representational** (probe) | **explicit-clock decoding linear/log-linear across 10 models; no-clock length prior supported in 8** | **measured off activations; model-specific positive fits span ~13×** |
 
-We **confirm** token-time (both probe and behavior increase with length) and
-contribute the pieces they lacked: the rate **measured on the residual stream**, for
-**elapsed** (not absolute) time — and the finding that the rate is **not a constant** but
-a per-model representational property (~14× across families), with the in-distribution V
-and the OOD overshoot shown to be the *same* parameter. The internal code is a **cleaner
-linear law than the behavioral readout** expresses — and in one model (Qwen) the readout
-is decoupled from it entirely.
+We support token-time in eight of the ten tested models and identify its
+boundary cases: talkie's no-clock read is weak/confounded and DeepSeek's is
+flat. Where a positive rate is supported, it is measured on the residual
+stream and is model-specific rather than constant. The activation read is
+generally cleaner than the behavioral readout; in Qwen the readout is
+anti-correlated with it.
 
 ## Estimator (settled)
 
@@ -460,14 +458,15 @@ the scalar is a robust summary, not the object.
 
 ## What would make it a paper
 
-Multi-family replication is **done** — 10 models / 9 architectures, linearity universal
-(R² 0.88–0.99), log-geometry universal, mid-depth locus universal. The framing has shifted
-from "does it replicate" (yes) to a **four-part result that is stronger than bare
-replication**:
+The explicit-clock result has a 10-model / 9-architecture sweep: R² 0.88–0.99,
+log-duration geometry throughout, and a generally mid-depth locus. The
+no-clock token-time result is an 8/10 pattern with two informative boundary
+cases. A paper would need to preserve that split:
 
-1. **Universal encoding, model-specific rate.** Linear/log-linear everywhere; V varies
-   ~14× and is representational (tokenisation-controlled), not a constant. The OOD overshoot
-   is the *same* parameter (ρ(OOD,V)=0.75) — one knob, two views.
+1. **Universal clock decoding, common but non-universal token time.** Positive
+   supported rates vary ~13× after the tokenisation control. The OOD overshoot
+   correlates with V (ρ=0.75), a cross-model association rather than proof of
+   one causal parameter.
 2. **A clean architectural dissociation (DeepSeek/MLA).** Reads clocks, doesn't encode
    length — a *negative control we didn't have to construct*, with MLA as the mechanistic
    lead. **The direct test (a second MLA model — DeepSeek-V3) is the single highest-value

@@ -1,9 +1,11 @@
 # AGENTS.md
 
-Research repo: **LLMs linearly encode elapsed conversational time in context
-length** (≈0.3 s/token off the residual stream — the token-time hypothesis made
-representational and measured). Runtime-independent of the other experiments.
-Not a library — small explicit analyses, keep docs current with code.
+Research repo: explicit elapsed time is linearly decodable at the elicitation
+slot across the 10 tested models. Without a clock, the readout aligns with
+context length in eight models, is weak/confounded in talkie, and is absent in
+DeepSeek; the positive fitted rates are model-specific rather than a universal
+≈0.3 s/token constant. Runtime-independent of the other experiments. Not a
+library — small explicit analyses, keep docs current with code.
 
 ## Read first
 

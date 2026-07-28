@@ -1,0 +1,11 @@
+model,architecture,layers,n,explicit_clock_ev_r2,partial_length_r2,no_clock_rate_seconds_per_token,no_clock_r,locus_fraction,pc1_log_time_r,scope_flag
+gemma-4-31b-it,gemma4,60,432,0.984,0.983,0.29,0.88,0.54,0.95,supported
+gemma-4-12b-it,gemma4_unified,48,432,0.981,0.979,0.29,0.76,0.72,0.94,supported
+qwen3.6-27b,qwen3_5,64,432,0.989,0.988,0.32,0.88,0.51,0.98,supported
+llama-3.2-3b,llama,28,432,0.984,0.982,1.06,0.86,0.52,0.95,supported
+phi-4-mini,phi3,32,432,0.985,0.983,0.87,0.59,0.52,0.98,supported-weaker
+talkie-1930-13b,talkie,40,432,0.888,0.880,0.20,0.33,0.56,0.82,weak-schedule-confounded
+ministral-3-14b,mistral3,40,432,0.987,0.985,2.60,0.72,0.51,0.94,supported
+deepseek-v2-lite,deepseek_v2,27,432,0.977,0.975,,-0.19,0.46,0.97,absent
+granite-4.1-30b,granite,64,432,0.977,0.975,1.48,0.59,0.81,0.97,supported-weaker-schedule-leak
+glm-4.7-flash,glm4_moe_lite,47,432,0.980,0.978,0.82,0.64,0.54,0.97,supported-weaker

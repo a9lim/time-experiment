@@ -1,11 +1,14 @@
 # time-experiment
 
-**LLMs linearly encode elapsed conversational time in context length.** A linear
-probe on the elicitation slot reads elapsed as ≈0.3 s/token off the residual stream
-(r=0.88, through the origin) — the token-time hypothesis made representational and
-measured. This repo establishes that encoding and characterizes how the model's
-*stated* duration tracks it (confirms the direction, saturates). It is runtime-
-independent of the sibling experiments.
+**Elapsed time shown by an explicit clock is linearly decodable at the
+elicitation slot across all 10 tested models.** When the clock is removed, the
+same readout aligns with context length in eight models, is weak and
+schedule-confounded in `talkie_1930`, and is absent in
+`DeepSeek-V2-Lite`. The inferred positive rates span roughly 0.20–2.60
+s/token rather than one universal ≈0.3 s/token constant. This repo separates
+that robust clock-decoding result from the model-dependent no-clock
+token-time hypothesis and from the still noisier stated-duration readout. It
+is runtime-independent of the sibling experiments.
 
 The elapsed-time probe is canonicalized as the **prefilled answer to a time
 elicitation prompt**: ask "roughly how long has this been going on?", prefill
@@ -106,7 +109,11 @@ tests/            offline duration, storage, and synthetic-analysis checks
 docs/             design and findings
 ```
 
-Data and figures are gitignored regenerated artifacts.
+Raw activations, transcripts, and exploratory outputs are gitignored.
+Compact public results are tracked in
+[`data/summary/`](data/summary/), and the tracked headline figures are indexed
+in [`figures/README.md`](figures/README.md). The full claim boundary is in
+[`docs/findings.md`](docs/findings.md).
 
 ## License
 

@@ -1,11 +1,16 @@
 # time-experiment — design
 
-**LLMs linearly encode elapsed conversational time in context length.** With no
-clock in the transcript, a linear probe on the elicitation slot reads elapsed time
-as ≈ 0.29 s/token × context (r=0.88, through the origin) — the **token-time
-hypothesis made representational and measured**. This study establishes that
-encoding, measures its per-token rate V off the residual stream, and characterizes
-how the model's *stated* duration tracks it (confirms the direction, but saturates).
+**Current cross-model result:** explicit elapsed time is linearly decodable at
+the elicitation slot in all 10 tested models. With no clock, the same readout
+aligns with context length in eight models, is weak/confounded in talkie, and
+is absent in DeepSeek. Positive fitted rates span roughly 0.20–2.60 s/token;
+the original ≈0.29 s/token value is Gemma-specific, not universal.
+
+This document began as the Gemma-4-31B study design. Gemma's no-clock probe
+reads ≈0.29 s/token × context (`r=0.88`, through the origin), and the sections
+below retain that reference deep-dive. Cross-model claims must use
+[`findings.md`](findings.md) and
+[`../data/summary/cross-model.csv`](../data/summary/cross-model.csv).
 
 Motivating observations (Claude instances): a 15-minute conversation "feels
 like hours"; a 30-minute task is predicted to take "5 days". The literature
@@ -27,11 +32,11 @@ gap is this study: the representational measurement of *elapsed* token-time.
   durations **4–7×**. *Your LLM Agents are Temporally Blind* (2510.23853): agents
   use conversation length as a staleness proxy. None probe internal state.
 
-Nobody had probed activations for elapsed conversational time and **measured the
-per-token rate V** the behavioral camp only assumed. That's here: we read V off the
-residual stream (≈0.3 s/tok, linear, through the origin), extend the
-representational method from absolute to *elapsed* time, and show the internal
-linear code is cleaner than the behavioral readout, which saturates.
+This experiment probes activations for elapsed conversational time and measures
+the no-clock per-token rate V that the behavioral framing assumed. In the
+Gemma reference run, V≈0.3 s/token and the activation read is cleaner than the
+saturating behavioral readout. Across models, explicit-clock decodability
+replicates, while no-clock V is model-specific and absent in DeepSeek.
 
 ## The reframe: three hypotheses, not a dichotomy
 
@@ -47,13 +52,14 @@ binary. Three distinguishable hypotheses:
   on a *human-calibrated* scale; the wall-clock error is the missing
   token→seconds mapping. Not arbitrary confabulation, not "clock time passing".
 
-**Verdict (this study): H3, confirmed and quantified.** The internal coordinate is
-a linear function of context length (the available signal) — and **V≈0.3 s/token is
-the "missing token→seconds mapping" H3 named, now measured** off the residual
-stream. H2 is rejected (no internally-represented *more* time; partial R² beyond
-length ≈ 0 with no clock). The H1 flavor survives only softly: the stated duration
-tracks the internal coordinate's *direction* but as a saturating, noisier echo
-(r=0.21 vs the probe's 0.88) — lossy readout, not decoupling.
+**Gemma reference verdict:** H3 is supported and quantified. The internal
+coordinate is a linear function of context length, with V≈0.3 s/token for
+Gemma. H2 is rejected in that run (partial R² beyond length ≈0 without a
+clock). The H1 flavor survives only softly: the stated duration tracks the
+internal coordinate's direction but as a saturating, noisier echo (`r=0.21`
+vs the probe's `0.88`). Cross-model behavior is less uniform: eight models
+support a no-clock length prior, talkie is weak/confounded, DeepSeek is flat,
+and Qwen's verbal readout is anti-correlated with its probe.
 
 ## The spine: one elicitation prompt, one readout slot
 
