@@ -245,6 +245,13 @@ to a minimally clock-pointing variant.
   α-calibration.
 - T4's T_narr factorial (matched-length generations narrating little vs much
   elapsed time) and multi-model replication of every throughline.
+- **T4b source-cue factorial — SPECIFIED.** Cross the reader model's own versus
+  another model's prose with user versus assistant role, using exact-text role
+  replays and reciprocal generators. This separates T4's current composite
+  "self-context" discount into attributed-role, distributional self-style, and
+  interaction effects; explicit-clock preservation, self-style availability,
+  and slot-OOD balance are validity gates. See
+  [`self_style_role_spec.md`](self_style_role_spec.md).
 - **Matched-length topic factorial.** Hold token count *and* gap schedule fixed;
   vary only the semantic content of the turns (neutral filler / affect-dense /
   explicitly time-laden / cognitively heavy) and read felt off the slot. The
