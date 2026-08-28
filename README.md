@@ -21,9 +21,9 @@ one-prompt spine, the four throughlines).
 Install the workspace-root shared package, then this repo:
 
 ```bash
-python --version  # system Python 3.12
-python -m pip install -e ..
-python -m pip install -e .
+python --version  # shared venv Python 3.12
+uv pip install -e ..
+uv pip install -e .
 ```
 
 ## Run

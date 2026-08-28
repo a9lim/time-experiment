@@ -72,7 +72,7 @@ first.
 
 ## Conventions
 
-- Use the machine's shared base Python 3.12 via plain `python`. Install the
+- Use the shared venv Python 3.12 (`~/.venv`, `uv pip` installs) via plain `python`. Install the
   workspace root and this experiment editable; no sibling experiment is
   required.
 - `TIME_MODEL` selects the short-name (default `gemma`); `TIME_VARIANT` routes a
