@@ -7,8 +7,9 @@
 > historical and are not maintained or qualified for that runtime. Do not install
 > or run it in Jobe's shared environment, or constrain that environment to keep
 > it working. This notice supersedes all active-status and Jobe execution
-> guidance below and in the linked documentation. Only `delta-feedback-experiment`
-> and `recurrent-lens-experiment` remain in the supported experiment scope.
+> guidance below and in the linked documentation. Only `recurrent-lens-experiment`
+> is maintained in this workspace; `delta-feedback-experiment` is maintained
+> separately in the companion `transformer-experiments` workspace.
 
 **Elapsed time shown by an explicit clock is linearly decodable at the
 elicitation slot across all 10 tested models.** When the clock is removed, the
@@ -32,7 +33,7 @@ Install the workspace-root shared package, then this repo:
 
 ```bash
 python --version  # shared venv Python 3.12
-uv pip install -e ..
+uv pip install -e ../../transformer-experiments -e ..
 uv pip install -e .
 ```
 

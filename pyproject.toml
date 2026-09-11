@@ -8,7 +8,8 @@ license = "CC-BY-SA-4.0"
 license-files = ["LICENSE"]
 authors = [{ name = "a9lim", email = "mx@a9l.im" }]
 dependencies = [
-    "transformer-experiments>=0.1,<0.2",
+    "transformer-experiments>=0.2,<0.3",
+    "interpretability-experiments>=0.1,<0.2",
     "numpy",
     "saklas>=1.4.6",
     "scipy",

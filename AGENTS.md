@@ -7,8 +7,9 @@
 > historical and are not maintained or qualified for that runtime. Do not install
 > or run it in Jobe's shared environment, or constrain that environment to keep
 > it working. This notice supersedes all active-status and Jobe execution
-> guidance below and in the linked documentation. Only `delta-feedback-experiment`
-> and `recurrent-lens-experiment` remain in the supported experiment scope.
+> guidance below and in the linked documentation. Only `recurrent-lens-experiment`
+> is maintained in this workspace; `delta-feedback-experiment` is maintained
+> separately in the companion `transformer-experiments` workspace.
 
 Research repo: explicit elapsed time is linearly decodable at the elicitation
 slot across the 10 tested models. Without a clock, the readout aligns with
@@ -27,10 +28,10 @@ library — small explicit analyses, keep docs current with code.
 ## Shared workspace infrastructure
 
 This repo is independent of every sibling experiment. It imports `saklas`
-(model loading + Mahalanobis whitener) and lazily uses the workspace-root
-`transformer_experiments` package for the shared model registry and
-chat-template fixups. Pure-logic modules remain importable without loading the
-model stack.
+(model loading + Mahalanobis whitener), uses `transformer_experiments` for the
+shared model registry, and lazily uses the workspace-root
+`interpretability_experiments` package for chat-template fixups. Pure-logic
+modules remain importable without loading the model stack.
 
 Key divergence from the siblings: the main line is **scripted, not generated**,
 and the canonical readout is the **prefilled elicitation slot** — render
